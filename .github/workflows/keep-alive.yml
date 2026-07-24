@@ -2,7 +2,7 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    - cron: '0 0 * * 1'  # runs every Monday at midnight
+    - cron: '0 0 * * *'  # runs every Monday at midnight
   workflow_dispatch:       # lets you trigger it manually too
 
 jobs:
