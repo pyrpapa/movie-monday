@@ -513,66 +513,124 @@ function JournalTab({ watchlog, onDelete, onEdit, loading }) {
 
 // ─── Suggestions Tab ──────────────────────────────────────────────────────────
 function SuggestionsTab({ watchlog, onSelectMovie }) {
+  const [mode,        setMode]        = useState("criteria"); // "criteria" | "similar"
+  const [genreId,     setGenreId]     = useState("");
+  const [personQuery, setPersonQuery] = useState("");
+  const [journalId,   setJournalId]   = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState("");
   const [reason,      setReason]      = useState("");
 
-  function topGenreIds() {
-    const counts = {};
-    watchlog.forEach(m=>{
-      const entry = Object.entries(GENRE_MAP).find(([,name])=>name===m.genre);
-      if (entry) counts[entry[0]] = (counts[entry[0]]||0) + (m.rating||1);
-    });
-    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([id])=>id);
-  }
-
-  async function generate() {
-    setLoading(true); setSuggestions([]);
-    const logged  = new Set(watchlog.map(m=>m.title?.toLowerCase()));
-    const genreIds = topGenreIds();
-    let movies = [];
-    try {
-      if (genreIds.length>0) {
-        setReason(`Based on your love of ${GENRE_MAP[genreIds[0]]}`);
-        const data = await tmdb("/discover/movie",{
-          with_genres: genreIds.slice(0,2).join("|"),
-          sort_by:"vote_average.desc",
-          "vote_count.gte":200,
-          language:"en-US", page:1
-        });
-        movies = data.results||[];
-      } else {
-        setReason("Popular movies you might enjoy");
-        const data = await tmdb("/movie/popular",{ language:"en-US", page:1 });
-        movies = data.results||[];
-      }
-    } catch {}
-    setSuggestions(movies.filter(m=>!logged.has((m.title||"").toLowerCase())).slice(0,12));
-    setLoading(false);
-  }
-
-  useEffect(()=>{ generate(); },[watchlog.length]);
+  const journalWithTmdb = watchlog.filter(m=>m.tmdb_id);
 
   function buildPrefill(m) {
     return {
       title:  m.title,
       year:   (m.release_date||"").slice(0,4),
-      genre:  GENRE_MAP[m.genre_ids?.[0]]||"",
+      genre:  m.genres?.[0]?.name || GENRE_MAP[m.genre_ids?.[0]] || "",
       poster: m.poster_path?TMDB_IMG+m.poster_path:"",
       tmdbId: m.id
     };
   }
 
+  function switchMode(id) {
+    setMode(id); setError(""); setSuggestions([]); setReason("");
+  }
+
+  async function findByCriteria() {
+    if (!genreId && !personQuery.trim()) { setError("Pick a genre or enter a name."); return; }
+    setLoading(true); setError(""); setSuggestions([]); setReason("");
+    try {
+      const params = { sort_by:"popularity.desc", "vote_count.gte":100, language:"en-US", page:1 };
+      let personName = "";
+      if (genreId) params.with_genres = genreId;
+      if (personQuery.trim()) {
+        const personData = await tmdb("/search/person", { query:personQuery, include_adult:false, language:"en-US", page:1 });
+        const person = personData.results?.[0];
+        if (!person) { setError(`No one named "${personQuery}" found on TMDB.`); setLoading(false); return; }
+        params.with_people = person.id;
+        personName = person.name;
+      }
+      const data = await tmdb("/discover/movie", params);
+      const logged = new Set(watchlog.map(m=>m.title?.toLowerCase()));
+      const bits = [genreId ? GENRE_MAP[genreId] : "", personName].filter(Boolean);
+      setSuggestions((data.results||[]).filter(m=>!logged.has((m.title||"").toLowerCase())));
+      setReason(bits.length ? `Matching ${bits.join(" + ")}` : "");
+    } catch { setError("Search failed — check your TMDB token."); }
+    setLoading(false);
+  }
+
+  async function findSimilar() {
+    if (!journalId) { setError("Pick a movie from your journal."); return; }
+    setLoading(true); setError(""); setSuggestions([]); setReason("");
+    const source = watchlog.find(m=>String(m.tmdb_id)===String(journalId));
+    try {
+      let data = await tmdb(`/movie/${journalId}/recommendations`, { language:"en-US", page:1 });
+      if (!data.results?.length) data = await tmdb(`/movie/${journalId}/similar`, { language:"en-US", page:1 });
+      const logged = new Set(watchlog.map(m=>m.title?.toLowerCase()));
+      setSuggestions((data.results||[]).filter(m=>!logged.has((m.title||"").toLowerCase())));
+      setReason(source ? `Because you watched ${source.title}` : "");
+    } catch { setError("Search failed — check your TMDB token."); }
+    setLoading(false);
+  }
+
+  const inp = { padding:"9px 12px", background:"#16161F", border:"1px solid #2A2A3A", borderRadius:8, color:"#F5E6C8", fontSize:14, outline:"none", fontFamily:"inherit" };
+  const sortedGenres = Object.entries(GENRE_MAP).sort((a,b)=>a[1].localeCompare(b[1]));
+
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.5rem" }}>
-        <h2 style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", margin:0 }}>Suggested For You</h2>
-        <button onClick={generate} style={{ padding:"7px 16px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#E8A838", cursor:"pointer", fontFamily:"inherit", fontSize:13 }}>
-          {loading?"Loading…":"Refresh"}
-        </button>
+      <h2 style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", marginTop:0, marginBottom:"1rem" }}>Suggested For You</h2>
+
+      <div style={{ display:"flex", gap:8, marginBottom:"1.25rem" }}>
+        {[["criteria","By Criteria"],["similar","Similar To…"]].map(([id,label])=>(
+          <button key={id} onClick={()=>switchMode(id)} style={{
+            padding:"7px 14px", border:"1px solid #2A2A3A", borderRadius:8, cursor:"pointer",
+            background: mode===id?"#E8A838":"transparent",
+            color: mode===id?"#0D0D14":"#8888AA",
+            fontWeight: mode===id?700:400, fontSize:13, fontFamily:"inherit"
+          }}>{label}</button>
+        ))}
       </div>
+
+      {mode==="criteria" ? (
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:"1.25rem", alignItems:"center" }}>
+          <select value={genreId} onChange={e=>setGenreId(e.target.value)} style={inp}>
+            <option value="">Any genre</option>
+            {sortedGenres.map(([id,name])=><option key={id} value={id}>{name}</option>)}
+          </select>
+          <input value={personQuery} onChange={e=>setPersonQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&findByCriteria()}
+            placeholder="Actor, actress, or director…" style={{ ...inp, flex:1, minWidth:180 }} />
+          <button onClick={findByCriteria} style={{ padding:"9px 18px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+            {loading?"…":"Find"}
+          </button>
+        </div>
+      ) : (
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:"1.25rem", alignItems:"center" }}>
+          {journalWithTmdb.length===0 ? (
+            <p style={{ color:"#8888AA", margin:0 }}>Log a movie via search first so it's linked to TMDB — then you can find things similar to it.</p>
+          ) : (
+            <>
+              <select value={journalId} onChange={e=>setJournalId(e.target.value)} style={{ ...inp, flex:1, minWidth:220 }}>
+                <option value="">Pick a movie from your journal…</option>
+                {journalWithTmdb.map(m=>(
+                  <option key={m.id} value={m.tmdb_id}>{m.title}{m.year?` (${m.year})`:""}</option>
+                ))}
+              </select>
+              <button onClick={findSimilar} style={{ padding:"9px 18px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                {loading?"…":"Find Similar"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {error && <p style={{ color:"#E05555", fontSize:14 }}>{error}</p>}
       {reason && <p style={{ color:"#8888AA", fontSize:14, marginTop:0, marginBottom:"1.25rem" }}>{reason}</p>}
-      {watchlog.length===0 && <p style={{ color:"#8888AA" }}>Log some movies first so we can tailor suggestions to your taste!</p>}
+      {!loading && !error && reason && suggestions.length===0 && (
+        <p style={{ color:"#8888AA", fontSize:14 }}>No matches — try different criteria.</p>
+      )}
+
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px,1fr))", gap:12 }}>
         {suggestions.map(m=>(
           <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
