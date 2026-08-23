@@ -117,20 +117,21 @@ function AuthScreen({ onLogin }) {
 
 // ─── Log Movie Modal ──────────────────────────────────────────────────────────
 function LogMovieModal({ prefill, onSave, onClose }) {
-  const [title,     setTitle]     = useState(prefill?.title  || "");
-  const [year,      setYear]      = useState(prefill?.year   || "");
-  const [genre,     setGenre]     = useState(prefill?.genre  || "");
-  const [poster,    setPoster]    = useState(prefill?.poster || "");
-  const [tmdbId,    setTmdbId]    = useState(prefill?.tmdbId || null);
-  const [rating,    setRating]    = useState(0);
-  const [notes,     setNotes]     = useState("");
-  const [watchDate, setWatchDate] = useState(new Date().toISOString().split("T")[0]);
+  const isEdit = Boolean(prefill?.id);
+  const [title,     setTitle]     = useState(prefill?.title      || "");
+  const [year,      setYear]      = useState(prefill?.year       || "");
+  const [genre,     setGenre]     = useState(prefill?.genre      || "");
+  const [poster,    setPoster]    = useState(prefill?.poster     || "");
+  const [tmdbId,    setTmdbId]    = useState(prefill?.tmdb_id    || prefill?.tmdbId || null);
+  const [rating,    setRating]    = useState(prefill?.rating     || 0);
+  const [notes,     setNotes]     = useState(prefill?.notes      || "");
+  const [watchDate, setWatchDate] = useState(prefill?.watch_date || new Date().toISOString().split("T")[0]);
   const [saving,    setSaving]    = useState(false);
 
   async function save() {
     if (!title.trim()) return;
     setSaving(true);
-    await onSave({ title, year, genre, poster, tmdb_id: tmdbId, rating, notes, watch_date: watchDate });
+    await onSave({ title, year, genre, poster, tmdb_id: tmdbId, rating, notes, watch_date: watchDate }, prefill?.id);
     setSaving(false);
   }
 
@@ -141,7 +142,7 @@ function LogMovieModal({ prefill, onSave, onClose }) {
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
       <div style={{ width:"100%", maxWidth:480, background:"#16161F", border:"1px solid #2A2A3A", borderRadius:16, padding:"1.5rem" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1.25rem" }}>
-          <h2 style={{ margin:0, color:"#F5E6C8", fontSize:20 }}>Log a Movie</h2>
+          <h2 style={{ margin:0, color:"#F5E6C8", fontSize:20 }}>{isEdit ? "Edit Entry" : "Log a Movie"}</h2>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#8888AA", fontSize:22, cursor:"pointer" }}>×</button>
         </div>
         <div style={{ display:"flex", gap:12, marginBottom:"1rem" }}>
@@ -173,7 +174,7 @@ function LogMovieModal({ prefill, onSave, onClose }) {
         <div style={{ display:"flex", gap:10 }}>
           <button onClick={onClose} style={{ flex:1, padding:"10px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#8888AA", cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
           <button onClick={save} disabled={saving} style={{ flex:2, padding:"10px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-            {saving?"Saving…":"Save to Journal"}
+            {saving ? "Saving…" : isEdit ? "Save Changes" : "Save to Journal"}
           </button>
         </div>
       </div>
@@ -276,7 +277,7 @@ function SearchTab({ onSelectMovie }) {
 }
 
 // ─── Journal Tab ──────────────────────────────────────────────────────────────
-function JournalTab({ watchlog, onDelete, loading }) {
+function JournalTab({ watchlog, onDelete, onEdit, loading }) {
   const [filter, setFilter] = useState("all");
   const [sort,   setSort]   = useState("recent");
 
@@ -324,7 +325,10 @@ function JournalTab({ watchlog, onDelete, loading }) {
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
                 <h3 style={{ margin:0, color:"#F5E6C8", fontSize:16, fontFamily:"'Georgia',serif" }}>{m.title}</h3>
-                <button onClick={()=>onDelete(m.id)} title="Remove" style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:18, flexShrink:0, padding:0, lineHeight:1 }}>×</button>
+                <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+                  <button onClick={()=>onEdit(m)} title="Edit" style={{ background:"none", border:"none", color:"#8888AA", cursor:"pointer", fontSize:14, padding:0, lineHeight:1 }}>✏️</button>
+                  <button onClick={()=>onDelete(m.id)} title="Remove" style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>×</button>
+                </div>
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
                 <Stars value={m.rating} size={14} />
@@ -565,20 +569,43 @@ export default function App() {
     setLoadingLog(false);
   }
 
-  async function handleSaveMovie(entry) {
-    const { data, error } = await supabase
-      .from("watchlog")
-      .insert([{ ...entry, user_id: user.id }])
-      .select()
-      .single();
-    if (!error) {
-      setWatchlog(prev=>[data, ...prev]);
-      setShowLog(false);
-      setLogPrefill(null);
-      setTab("journal");
+  async function handleSaveMovie(entry, editId) {
+    if (editId) {
+      // Update existing entry
+      const { data, error } = await supabase
+        .from("watchlog")
+        .update(entry)
+        .eq("id", editId)
+        .select()
+        .single();
+      if (!error) {
+        setWatchlog(prev=>prev.map(m=>m.id===editId ? data : m));
+        setShowLog(false);
+        setLogPrefill(null);
+      } else {
+        alert("Error updating: " + error.message);
+      }
     } else {
-      alert("Error saving: " + error.message);
+      // Insert new entry
+      const { data, error } = await supabase
+        .from("watchlog")
+        .insert([{ ...entry, user_id: user.id }])
+        .select()
+        .single();
+      if (!error) {
+        setWatchlog(prev=>[data, ...prev]);
+        setShowLog(false);
+        setLogPrefill(null);
+        setTab("journal");
+      } else {
+        alert("Error saving: " + error.message);
+      }
     }
+  }
+
+  function handleEditMovie(movie) {
+    setLogPrefill(movie);
+    setShowLog(true);
   }
 
   async function handleDelete(id) {
@@ -633,7 +660,7 @@ export default function App() {
       </header>
 
       <main style={{ maxWidth:800, margin:"0 auto", padding:"2rem 24px" }}>
-        {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} loading={loadingLog} />}
+        {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} loading={loadingLog} />}
         {tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} />}
         {tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
         {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={user.email} />}
