@@ -182,6 +182,80 @@ function LogMovieModal({ prefill, onSave, onClose }) {
   );
 }
 
+// ─── Log Movie Search Modal ─────────────────────────────────────────────────
+function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
+  const [query,   setQuery]   = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+
+  async function search() {
+    if (!query.trim()) return;
+    setLoading(true); setError(""); setResults([]);
+    try {
+      const data = await tmdb("/search/movie", { query, include_adult:false, language:"en-US", page:1 });
+      if (data.results?.length) setResults(data.results.slice(0,12));
+      else setError("No results found.");
+    } catch { setError("Search failed — check your TMDB token."); }
+    setLoading(false);
+  }
+
+  function buildPrefill(m) {
+    return {
+      title:  m.title || m.name,
+      year:   (m.release_date||"").slice(0,4),
+      genre:  GENRE_MAP[m.genre_ids?.[0]] || "",
+      poster: m.poster_path ? TMDB_IMG+m.poster_path : "",
+      tmdbId: m.id
+    };
+  }
+
+  const inp = { padding:"10px 14px", background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:8, color:"#F5E6C8", fontSize:15, outline:"none", fontFamily:"inherit" };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+      <div style={{ width:"100%", maxWidth:560, maxHeight:"85vh", overflowY:"auto", background:"#16161F", border:"1px solid #2A2A3A", borderRadius:16, padding:"1.5rem" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1rem" }}>
+          <h2 style={{ margin:0, color:"#F5E6C8", fontSize:20 }}>Log a Movie</h2>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#8888AA", fontSize:22, cursor:"pointer" }}>×</button>
+        </div>
+        <div style={{ display:"flex", gap:8, marginBottom:"1rem" }}>
+          <input autoFocus value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&search()}
+            placeholder="Search by title, actor, director…"
+            style={{ ...inp, flex:1 }} />
+          <button onClick={search} style={{ padding:"10px 20px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+            {loading?"…":"Search"}
+          </button>
+        </div>
+        {error && <p style={{ color:"#E05555", fontSize:14 }}>{error}</p>}
+
+        {results.length>0 && (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(110px,1fr))", gap:10, marginBottom:"1rem" }}>
+            {results.map(m=>(
+              <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
+                style={{ background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
+                onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
+                {m.poster_path
+                  ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
+                  : <div style={{ aspectRatio:"2/3", background:"#1A1A28", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>🎬</div>}
+                <div style={{ padding:"6px 8px" }}>
+                  <p style={{ margin:0, color:"#F5E6C8", fontSize:12, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
+                  <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:11 }}>{(m.release_date||"").slice(0,4)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button onClick={onManual} style={{ background:"none", border:"none", color:"#8888AA", fontSize:13, cursor:"pointer", textDecoration:"underline", padding:0, fontFamily:"inherit" }}>
+          Can't find it? Enter manually
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Search Tab ───────────────────────────────────────────────────────────────
 function SearchTab({ onSelectMovie }) {
   const [query,    setQuery]    = useState("");
@@ -537,6 +611,7 @@ export default function App() {
   const [watchlog,   setWatchlog]   = useState([]);
   const [tab,        setTab]        = useState("journal");
   const [showLog,    setShowLog]    = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [logPrefill, setLogPrefill] = useState(null);
   const [loadingLog, setLoadingLog] = useState(false);
   const [authReady,  setAuthReady]  = useState(false);
@@ -650,7 +725,7 @@ export default function App() {
               }}>{t.label}</button>
             ))}
           </nav>
-          <button onClick={()=>setShowLog(true)} style={{ padding:"7px 14px", background:"#1E1E2F", border:"1px solid #3A3A5A", borderRadius:8, color:"#E8A838", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600 }}>
+          <button onClick={()=>setShowSearch(true)} style={{ padding:"7px 14px", background:"#1E1E2F", border:"1px solid #3A3A5A", borderRadius:8, color:"#E8A838", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600 }}>
             + Log Movie
           </button>
           <button onClick={handleLogout} style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:12, fontFamily:"inherit" }} title="Sign out">
@@ -665,6 +740,14 @@ export default function App() {
         {tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
         {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={user.email} />}
       </main>
+
+      {showSearch && (
+        <LogMovieSearchModal
+          onSelectMovie={(prefill)=>{ setShowSearch(false); handleSelectMovie(prefill); }}
+          onManual={()=>{ setShowSearch(false); setLogPrefill(null); setShowLog(true); }}
+          onClose={()=>setShowSearch(false)}
+        />
+      )}
 
       {showLog && (
         <LogMovieModal
