@@ -461,7 +461,7 @@ function JournalEntry({ m, onDelete, onEdit, onToggleGold }) {
         <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
           <h3 style={{ margin:0, color:"#F5E6C8", fontSize:16, fontFamily:"'Georgia',serif" }}>{m.title}</h3>
           <div style={{ display:"flex", gap:8, flexShrink:0, alignItems:"center" }}>
-            <button onClick={()=>onToggleGold(m)} title={isGold?"Remove from Best Of":"Add to Best Of"}
+            <button onClick={()=>onToggleGold(m)} title={isGold?"Remove from Hall of Fame":"Add to Hall of Fame"}
               style={{ background:"none", border:"none", cursor:"pointer", fontSize:15, padding:0, lineHeight:1, color: isGold?"#E8A838":"#555577" }}>
               {isGold?"⭐":"☆"}
             </button>
@@ -590,54 +590,76 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
   );
 }
 
-// ─── Best Of Tab ──────────────────────────────────────────────────────────────
+// ─── Hall of Fame Tab ────────────────────────────────────────────────────────
 function GoldStarTab({ watchlog, onReorder }) {
   const goldMovies = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank);
-  const [dragIdx, setDragIdx] = useState(null);
-  const [overIdx, setOverIdx] = useState(null);
+  const [dragIdx,      setDragIdx]      = useState(null);
+  const [overIdx,      setOverIdx]      = useState(null);
+  const [overPosition, setOverPosition] = useState(null); // "above" | "below"
 
-  function handleDrop(dropIdx) {
-    if (dragIdx===null || dragIdx===dropIdx) { setDragIdx(null); setOverIdx(null); return; }
+  function reset() { setDragIdx(null); setOverIdx(null); setOverPosition(null); }
+
+  function handleDrop() {
+    if (dragIdx===null || overIdx===null) { reset(); return; }
+    let insertAt = overPosition==="below" ? overIdx+1 : overIdx;
+    if (insertAt > dragIdx) insertAt -= 1; // account for the shift once the dragged item is removed
+    if (insertAt === dragIdx) { reset(); return; }
     const reordered = [...goldMovies];
     const [moved] = reordered.splice(dragIdx,1);
-    reordered.splice(dropIdx,0,moved);
+    reordered.splice(insertAt,0,moved);
     onReorder(reordered.map(m=>m.id));
-    setDragIdx(null); setOverIdx(null);
+    reset();
   }
 
   if (goldMovies.length===0) return (
     <div style={{ textAlign:"center", padding:"3rem", color:"#8888AA" }}>
       <div style={{ fontSize:40, marginBottom:12 }}>⭐</div>
-      <p>No Best Of picks yet. Tap the ☆ on any Journal entry to add it here, then drag to rank it.</p>
+      <p>No Hall of Fame picks yet. Tap the ☆ on any Journal entry to add it here, then drag to rank it.</p>
     </div>
   );
 
   return (
     <div style={{ maxWidth:640, margin:"0 auto" }}>
-      <h2 style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", marginTop:0, marginBottom:4 }}>⭐ Best Of</h2>
+      <h2 style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", marginTop:0, marginBottom:4 }}>⭐ Hall of Fame</h2>
       <p style={{ color:"#8888AA", fontSize:14, marginTop:0, marginBottom:"1.25rem" }}>Drag to reorder — #1 is your favorite.</p>
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-        {goldMovies.map((m,i)=>(
-          <div key={m.id}
-            draggable
-            onDragStart={()=>setDragIdx(i)}
-            onDragOver={e=>{ e.preventDefault(); setOverIdx(i); }}
-            onDragEnd={()=>{ setDragIdx(null); setOverIdx(null); }}
-            onDrop={()=>handleDrop(i)}
-            style={{
-              display:"flex", alignItems:"center", gap:12, background:"#16161F",
-              border:`1px solid ${overIdx===i?"#E8A838":"#2A2A3A"}`, borderRadius:10,
-              padding:"10px 14px", cursor:"grab", opacity: dragIdx===i?0.4:1, transition:"border-color 0.15s"
-            }}>
-            <span style={{ color:"#E8A838", fontWeight:700, width:22, textAlign:"center", fontSize:15, fontFamily:"'Georgia',serif" }}>{i+1}</span>
-            <Poster src={m.poster} title={m.title} width={40} height={58} />
-            <div style={{ flex:1, minWidth:0 }}>
-              <p style={{ margin:0, color:"#F5E6C8", fontSize:15, fontFamily:"'Georgia',serif", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
-              {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
+        {goldMovies.map((m,i)=>{
+          const showLine = dragIdx!==null && dragIdx!==i && overIdx===i;
+          return (
+            <div key={m.id} style={{ position:"relative" }}>
+              {showLine && overPosition==="above" && (
+                <div style={{ position:"absolute", top:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
+              )}
+              <div
+                draggable
+                onDragStart={()=>setDragIdx(i)}
+                onDragOver={e=>{
+                  e.preventDefault();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setOverIdx(i);
+                  setOverPosition(e.clientY < rect.top+rect.height/2 ? "above" : "below");
+                }}
+                onDragEnd={reset}
+                onDrop={handleDrop}
+                style={{
+                  display:"flex", alignItems:"center", gap:12, background:"#16161F",
+                  border:"1px solid #2A2A3A", borderRadius:10,
+                  padding:"10px 14px", cursor:"grab", opacity: dragIdx===i?0.4:1
+                }}>
+                <span style={{ color:"#E8A838", fontWeight:700, width:22, textAlign:"center", fontSize:15, fontFamily:"'Georgia',serif" }}>{i+1}</span>
+                <Poster src={m.poster} title={m.title} width={40} height={58} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <p style={{ margin:0, color:"#F5E6C8", fontSize:15, fontFamily:"'Georgia',serif", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
+                  {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
+                </div>
+                <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>
+              </div>
+              {showLine && overPosition==="below" && (
+                <div style={{ position:"absolute", bottom:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
+              )}
             </div>
-            <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1253,7 +1275,7 @@ export default function App() {
     { id:"journal",     label:"Journal"  },
     { id:"search",      label:"Search"   },
     { id:"suggestions", label:"For You"  },
-    { id:"goldstar",    label:"Best Of"  },
+    { id:"goldstar",    label:"Hall of Fame"  },
     { id:"report",      label:"Report"   },
   ];
 
