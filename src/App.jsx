@@ -452,14 +452,19 @@ function monthLabelOf(dateStr) {
   return `${MONTH_NAMES[Number(mo)-1]} ${y}`;
 }
 
-function JournalEntry({ m, onDelete, onEdit }) {
+function JournalEntry({ m, onDelete, onEdit, onToggleGold }) {
+  const isGold = m.gold_rank!=null;
   return (
-    <div style={{ display:"flex", gap:14, background:"#16161F", border:"1px solid #2A2A3A", borderRadius:12, padding:"12px 16px", alignItems:"flex-start" }}>
+    <div style={{ display:"flex", gap:14, background:"#16161F", border:`1px solid ${isGold?"#E8A838":"#2A2A3A"}`, borderRadius:12, padding:"12px 16px", alignItems:"flex-start" }}>
       <Poster src={m.poster} title={m.title} />
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
           <h3 style={{ margin:0, color:"#F5E6C8", fontSize:16, fontFamily:"'Georgia',serif" }}>{m.title}</h3>
-          <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+          <div style={{ display:"flex", gap:8, flexShrink:0, alignItems:"center" }}>
+            <button onClick={()=>onToggleGold(m)} title={isGold?"Remove from Best Of":"Add to Best Of"}
+              style={{ background:"none", border:"none", cursor:"pointer", fontSize:15, padding:0, lineHeight:1, color: isGold?"#E8A838":"#555577" }}>
+              {isGold?"⭐":"☆"}
+            </button>
             <button onClick={()=>onEdit(m)} title="Edit" style={{ background:"none", border:"none", color:"#8888AA", cursor:"pointer", fontSize:14, padding:0, lineHeight:1 }}>✏️</button>
             <button onClick={()=>onDelete(m.id)} title="Remove" style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>×</button>
           </div>
@@ -476,7 +481,7 @@ function JournalEntry({ m, onDelete, onEdit }) {
   );
 }
 
-function JournalTab({ watchlog, onDelete, onEdit, loading }) {
+function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
   const [filter,     setFilter]     = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
   const [sort,       setSort]       = useState("recent");
@@ -569,7 +574,7 @@ function JournalTab({ watchlog, onDelete, onEdit, loading }) {
                 </button>
                 {isOpen && (
                   <div style={{ display:"flex", flexDirection:"column", gap:10, margin:"10px 0 16px" }}>
-                    {g.movies.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} />)}
+                    {g.movies.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} onToggleGold={onToggleGold} />)}
                   </div>
                 )}
               </div>
@@ -578,9 +583,62 @@ function JournalTab({ watchlog, onDelete, onEdit, loading }) {
         </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-          {filtered.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} />)}
+          {filtered.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} onToggleGold={onToggleGold} />)}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Best Of Tab ──────────────────────────────────────────────────────────────
+function GoldStarTab({ watchlog, onReorder }) {
+  const goldMovies = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank);
+  const [dragIdx, setDragIdx] = useState(null);
+  const [overIdx, setOverIdx] = useState(null);
+
+  function handleDrop(dropIdx) {
+    if (dragIdx===null || dragIdx===dropIdx) { setDragIdx(null); setOverIdx(null); return; }
+    const reordered = [...goldMovies];
+    const [moved] = reordered.splice(dragIdx,1);
+    reordered.splice(dropIdx,0,moved);
+    onReorder(reordered.map(m=>m.id));
+    setDragIdx(null); setOverIdx(null);
+  }
+
+  if (goldMovies.length===0) return (
+    <div style={{ textAlign:"center", padding:"3rem", color:"#8888AA" }}>
+      <div style={{ fontSize:40, marginBottom:12 }}>⭐</div>
+      <p>No Best Of picks yet. Tap the ☆ on any Journal entry to add it here, then drag to rank it.</p>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth:640, margin:"0 auto" }}>
+      <h2 style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", marginTop:0, marginBottom:4 }}>⭐ Best Of</h2>
+      <p style={{ color:"#8888AA", fontSize:14, marginTop:0, marginBottom:"1.25rem" }}>Drag to reorder — #1 is your favorite.</p>
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {goldMovies.map((m,i)=>(
+          <div key={m.id}
+            draggable
+            onDragStart={()=>setDragIdx(i)}
+            onDragOver={e=>{ e.preventDefault(); setOverIdx(i); }}
+            onDragEnd={()=>{ setDragIdx(null); setOverIdx(null); }}
+            onDrop={()=>handleDrop(i)}
+            style={{
+              display:"flex", alignItems:"center", gap:12, background:"#16161F",
+              border:`1px solid ${overIdx===i?"#E8A838":"#2A2A3A"}`, borderRadius:10,
+              padding:"10px 14px", cursor:"grab", opacity: dragIdx===i?0.4:1, transition:"border-color 0.15s"
+            }}>
+            <span style={{ color:"#E8A838", fontWeight:700, width:22, textAlign:"center", fontSize:15, fontFamily:"'Georgia',serif" }}>{i+1}</span>
+            <Poster src={m.poster} title={m.title} width={40} height={58} />
+            <div style={{ flex:1, minWidth:0 }}>
+              <p style={{ margin:0, color:"#F5E6C8", fontSize:15, fontFamily:"'Georgia',serif", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
+              {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
+            </div>
+            <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -927,7 +985,7 @@ function ReportTab({ watchlog, userEmail }) {
   const genreCounts = watchlog.reduce((acc,m)=>{ if(m.genre) acc[m.genre]=(acc[m.genre]||0)+1; return acc; },{});
   const genreData   = Object.entries(genreCounts).map(([label,value])=>({ label, value })).sort((a,b)=>b.value-a.value);
   const topGenre    = Object.entries(genreCounts).sort((a,b)=>b[1]-a[1])[0];
-  const top5        = [...watchlog].sort((a,b)=>b.rating-a.rating).slice(0,5);
+  const top5        = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank).slice(0,5);
   const recent5     = [...watchlog].sort((a,b)=>new Date(b.watch_date)-new Date(a.watch_date)).slice(0,5);
 
   function printReport() {
@@ -976,16 +1034,18 @@ ${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:"1.5rem" }}>
         <div>
-          <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0 }}>Top Rated</h3>
-          {top5.map((m,i)=>(
-            <div key={m.id} style={{ display:"flex", gap:10, alignItems:"center", paddingBottom:8, marginBottom:8, borderBottom:"1px solid #2A2A3A" }}>
-              <span style={{ color:"#E8A838", fontWeight:700, width:18, flexShrink:0 }}>{i+1}</span>
-              <div style={{ flex:1, minWidth:0 }}>
-                <p style={{ margin:0, color:"#F5E6C8", fontSize:14, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
-                <Stars value={m.rating} size={12} />
+          <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0 }}>⭐ Top Rated</h3>
+          {top5.length===0
+            ? <p style={{ color:"#8888AA", fontSize:13 }}>Star your favorites in the Journal to rank them here.</p>
+            : top5.map((m,i)=>(
+              <div key={m.id} style={{ display:"flex", gap:10, alignItems:"center", paddingBottom:8, marginBottom:8, borderBottom:"1px solid #2A2A3A" }}>
+                <span style={{ color:"#E8A838", fontWeight:700, width:18, flexShrink:0 }}>{i+1}</span>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <p style={{ margin:0, color:"#F5E6C8", fontSize:14, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
+                  <Stars value={m.rating} size={12} />
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
         <div>
           <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0 }}>Recently Watched</h3>
@@ -1145,6 +1205,36 @@ export default function App() {
     setWatchlog(prev=>prev.filter(m=>m.id!==id));
   }
 
+  async function handleToggleGoldStar(movie) {
+    if (movie.gold_rank!=null) {
+      const removedRank = movie.gold_rank;
+      const { error: e1 } = await supabase.from("watchlog").update({ gold_rank:null }).eq("id", movie.id);
+      if (e1) { alert("Error: " + e1.message); return; }
+      const toShift = watchlog.filter(m=>m.gold_rank!=null && m.gold_rank>removedRank);
+      await Promise.all(toShift.map(m=>supabase.from("watchlog").update({ gold_rank:m.gold_rank-1 }).eq("id", m.id)));
+      setWatchlog(prev=>prev.map(m=>{
+        if (m.id===movie.id) return { ...m, gold_rank:null };
+        if (m.gold_rank!=null && m.gold_rank>removedRank) return { ...m, gold_rank:m.gold_rank-1 };
+        return m;
+      }));
+    } else {
+      const maxRank = watchlog.reduce((max,m)=>m.gold_rank!=null && m.gold_rank>max ? m.gold_rank : max, 0);
+      const newRank = maxRank+1;
+      const { error: e1 } = await supabase.from("watchlog").update({ gold_rank:newRank }).eq("id", movie.id);
+      if (e1) { alert("Error: " + e1.message); return; }
+      setWatchlog(prev=>prev.map(m=>m.id===movie.id ? { ...m, gold_rank:newRank } : m));
+    }
+  }
+
+  async function handleReorderGoldStars(orderedIds) {
+    const updates = orderedIds.map((id,i)=>({ id, gold_rank:i+1 }));
+    setWatchlog(prev=>prev.map(m=>{
+      const u = updates.find(x=>x.id===m.id);
+      return u ? { ...m, gold_rank:u.gold_rank } : m;
+    }));
+    await Promise.all(updates.map(u=>supabase.from("watchlog").update({ gold_rank:u.gold_rank }).eq("id", u.id)));
+  }
+
   function handleSelectMovie(prefill) {
     setLogPrefill(prefill);
     setShowLog(true);
@@ -1163,6 +1253,7 @@ export default function App() {
     { id:"journal",     label:"Journal"  },
     { id:"search",      label:"Search"   },
     { id:"suggestions", label:"For You"  },
+    { id:"goldstar",    label:"Best Of"  },
     { id:"report",      label:"Report"   },
   ];
 
@@ -1192,9 +1283,10 @@ export default function App() {
       </header>
 
       <main style={{ maxWidth:800, margin:"0 auto", padding:"2rem 24px" }}>
-        {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} loading={loadingLog} />}
+        {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} loading={loadingLog} />}
         {tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} />}
         {tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
+        {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} />}
         {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={user.email} />}
       </main>
 
