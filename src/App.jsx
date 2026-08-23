@@ -443,17 +443,80 @@ function SearchTab({ onSelectMovie }) {
 }
 
 // ─── Journal Tab ──────────────────────────────────────────────────────────────
-function JournalTab({ watchlog, onDelete, onEdit, loading }) {
-  const [filter, setFilter] = useState("all");
-  const [sort,   setSort]   = useState("recent");
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+function watchYearOf(dateStr)  { return dateStr ? dateStr.slice(0,4) : null; }
+function monthKeyOf(dateStr)   { return dateStr ? dateStr.slice(0,7) : "unknown"; }
+function monthLabelOf(dateStr) {
+  if (!dateStr) return "Undated";
+  const [y,mo] = dateStr.split("-");
+  return `${MONTH_NAMES[Number(mo)-1]} ${y}`;
+}
 
-  const genres   = ["all", ...new Set(watchlog.map(m=>m.genre).filter(Boolean))];
-  let   filtered = watchlog.filter(m=>filter==="all"||m.genre===filter);
+function JournalEntry({ m, onDelete, onEdit }) {
+  return (
+    <div style={{ display:"flex", gap:14, background:"#16161F", border:"1px solid #2A2A3A", borderRadius:12, padding:"12px 16px", alignItems:"flex-start" }}>
+      <Poster src={m.poster} title={m.title} />
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
+          <h3 style={{ margin:0, color:"#F5E6C8", fontSize:16, fontFamily:"'Georgia',serif" }}>{m.title}</h3>
+          <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+            <button onClick={()=>onEdit(m)} title="Edit" style={{ background:"none", border:"none", color:"#8888AA", cursor:"pointer", fontSize:14, padding:0, lineHeight:1 }}>✏️</button>
+            <button onClick={()=>onDelete(m.id)} title="Remove" style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>×</button>
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
+          <Stars value={m.rating} size={14} />
+          {m.year  && <span style={{ color:"#8888AA", fontSize:13 }}>{m.year}</span>}
+          {m.genre && <span style={{ fontSize:11, padding:"2px 8px", borderRadius:20, border:"1px solid #555577", color:"#8888AA" }}>{m.genre}</span>}
+          <span style={{ color:"#8888AA", fontSize:12 }}>{m.watch_date}</span>
+        </div>
+        {m.notes && <p style={{ margin:"6px 0 0", color:"#AAAACC", fontSize:14, lineHeight:1.5 }}>{m.notes}</p>}
+      </div>
+    </div>
+  );
+}
+
+function JournalTab({ watchlog, onDelete, onEdit, loading }) {
+  const [filter,     setFilter]     = useState("all");
+  const [yearFilter, setYearFilter] = useState("all");
+  const [sort,       setSort]       = useState("recent");
+  const [expanded, setExpanded] = useState(() => {
+    if (watchlog.length===0) return new Set();
+    const newest = [...watchlog].sort((a,b)=>new Date(b.watch_date)-new Date(a.watch_date))[0];
+    return new Set([monthKeyOf(newest.watch_date)]);
+  });
+
+  const genres = ["all", ...new Set(watchlog.map(m=>m.genre).filter(Boolean))];
+  const years  = ["all", ...new Set(watchlog.map(m=>watchYearOf(m.watch_date)).filter(Boolean))].sort((a,b)=>a==="all"?-1:b==="all"?1:b-a);
+
+  let filtered = watchlog.filter(m=>
+    (filter==="all"||m.genre===filter) && (yearFilter==="all"||watchYearOf(m.watch_date)===yearFilter)
+  );
   filtered = [...filtered].sort((a,b)=>{
     if (sort==="recent") return new Date(b.watch_date)-new Date(a.watch_date);
     if (sort==="rating") return b.rating-a.rating;
     return a.title.localeCompare(b.title);
   });
+
+  const groupByDate = sort==="recent";
+  const groups = [];
+  if (groupByDate) {
+    const byKey = new Map();
+    filtered.forEach(m=>{
+      const key = monthKeyOf(m.watch_date);
+      if (!byKey.has(key)) byKey.set(key, { key, label: monthLabelOf(m.watch_date), movies: [] });
+      byKey.get(key).movies.push(m);
+    });
+    groups.push(...byKey.values());
+  }
+
+  function toggle(key) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
 
   const sel = { padding:"7px 12px", background:"#16161F", border:"1px solid #2A2A3A", borderRadius:8, color:"#F5E6C8", fontSize:13, outline:"none", fontFamily:"inherit" };
 
@@ -465,9 +528,12 @@ function JournalTab({ watchlog, onDelete, onEdit, loading }) {
         <h2 style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", margin:0 }}>
           My Journal <span style={{ color:"#8888AA", fontWeight:400, fontSize:16 }}>({watchlog.length})</span>
         </h2>
-        <div style={{ display:"flex", gap:8 }}>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           <select value={filter} onChange={e=>setFilter(e.target.value)} style={sel}>
             {genres.map(g=><option key={g} value={g}>{g==="all"?"All Genres":g}</option>)}
+          </select>
+          <select value={yearFilter} onChange={e=>setYearFilter(e.target.value)} style={sel}>
+            {years.map(y=><option key={y} value={y}>{y==="all"?"All Years":`Watched ${y}`}</option>)}
           </select>
           <select value={sort} onChange={e=>setSort(e.target.value)} style={sel}>
             <option value="recent">Most Recent</option>
@@ -480,33 +546,41 @@ function JournalTab({ watchlog, onDelete, onEdit, loading }) {
       {filtered.length===0 && (
         <div style={{ textAlign:"center", padding:"3rem", color:"#8888AA" }}>
           <div style={{ fontSize:40, marginBottom:12 }}>🍿</div>
-          <p>No movies logged yet. Search for one or use <strong style={{ color:"#F5E6C8" }}>+ Log Movie</strong> to get started!</p>
+          <p>{watchlog.length===0
+            ? <>No movies logged yet. Search for one or use <strong style={{ color:"#F5E6C8" }}>+ Log Movie</strong> to get started!</>
+            : "No movies match these filters."}</p>
         </div>
       )}
 
-      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-        {filtered.map(m=>(
-          <div key={m.id} style={{ display:"flex", gap:14, background:"#16161F", border:"1px solid #2A2A3A", borderRadius:12, padding:"12px 16px", alignItems:"flex-start" }}>
-            <Poster src={m.poster} title={m.title} />
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
-                <h3 style={{ margin:0, color:"#F5E6C8", fontSize:16, fontFamily:"'Georgia',serif" }}>{m.title}</h3>
-                <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-                  <button onClick={()=>onEdit(m)} title="Edit" style={{ background:"none", border:"none", color:"#8888AA", cursor:"pointer", fontSize:14, padding:0, lineHeight:1 }}>✏️</button>
-                  <button onClick={()=>onDelete(m.id)} title="Remove" style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>×</button>
-                </div>
+      {groupByDate ? (
+        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+          {groups.map(g=>{
+            const isOpen = expanded.has(g.key);
+            return (
+              <div key={g.key}>
+                <button onClick={()=>toggle(g.key)} style={{
+                  display:"flex", alignItems:"center", gap:10, width:"100%",
+                  background:"none", border:"none", borderBottom:"1px solid #2A2A3A",
+                  padding:"10px 4px", cursor:"pointer", textAlign:"left", fontFamily:"inherit"
+                }}>
+                  <span style={{ color:"#E8A838", fontSize:11 }}>{isOpen?"▾":"▸"}</span>
+                  <span style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", fontSize:16, letterSpacing:"0.5px" }}>{g.label}</span>
+                  <span style={{ color:"#8888AA", fontSize:13 }}>({g.movies.length})</span>
+                </button>
+                {isOpen && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:10, margin:"10px 0 16px" }}>
+                    {g.movies.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} />)}
+                  </div>
+                )}
               </div>
-              <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
-                <Stars value={m.rating} size={14} />
-                {m.year  && <span style={{ color:"#8888AA", fontSize:13 }}>{m.year}</span>}
-                {m.genre && <span style={{ fontSize:11, padding:"2px 8px", borderRadius:20, border:"1px solid #555577", color:"#8888AA" }}>{m.genre}</span>}
-                <span style={{ color:"#8888AA", fontSize:12 }}>{m.watch_date}</span>
-              </div>
-              {m.notes && <p style={{ margin:"6px 0 0", color:"#AAAACC", fontSize:14, lineHeight:1.5 }}>{m.notes}</p>}
-            </div>
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {filtered.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} />)}
+        </div>
+      )}
     </div>
   );
 }
