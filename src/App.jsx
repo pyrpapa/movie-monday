@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -524,7 +524,7 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
   const [error,       setError]       = useState("");
   const [reason,      setReason]      = useState("");
 
-  const journalWithTmdb = watchlog.filter(m=>m.tmdb_id);
+  const journalWithTmdb = watchlog.filter(m=>m.tmdb_id).sort((a,b)=>a.title.localeCompare(b.title));
 
   const currentDecade = Math.floor(new Date().getFullYear()/10)*10;
   const decades = [];
@@ -687,8 +687,151 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
   );
 }
 
+// ─── Bar Chart ────────────────────────────────────────────────────────────────
+function BarChart({ data }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
+  if (!data.length) return null;
+  const max = Math.max(1, ...data.map(d=>d.value));
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      {data.map((d,i)=>(
+        <div key={d.label} style={{ display:"flex", alignItems:"center", gap:10 }}
+          onMouseEnter={()=>setHoverIdx(i)} onMouseLeave={()=>setHoverIdx(null)}>
+          <span style={{
+            width:130, flexShrink:0, color:"#AAAACC", fontSize:13, textAlign:"right",
+            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"
+          }} title={d.label}>{d.label}</span>
+          <div style={{ flex:1, background:"#0D0D14", borderRadius:4, height:18, position:"relative" }}>
+            <div style={{
+              width:`${Math.max((d.value/max)*100, 3)}%`, height:"100%",
+              background: hoverIdx===i ? "#F5C463" : "#E8A838",
+              borderRadius:4, transition:"width 0.3s ease, background 0.15s"
+            }} />
+          </div>
+          <span style={{ width:26, flexShrink:0, color:"#F5E6C8", fontSize:13, fontWeight:600 }}>{d.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Line Chart ───────────────────────────────────────────────────────────────
+function LineChart({ data }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
+  if (data.length<2) return (
+    <p style={{ color:"#8888AA", fontSize:13 }}>Need at least two different years to draw a trend.</p>
+  );
+
+  const width=640, height=180, padL=8, padR=8, padT=16, padB=24;
+  const max = Math.max(...data.map(d=>d.value));
+  const n = data.length;
+  const x = i => padL + (n===1 ? 0 : (i/(n-1)) * (width-padL-padR));
+  const y = v => height-padB - (max===0 ? 0 : (v/max) * (height-padT-padB));
+  const points = data.map((d,i)=>`${x(i)},${y(d.value)}`).join(" ");
+  const showAllLabels = n<=14;
+
+  return (
+    <div style={{ overflowX:"auto" }}>
+      <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} style={{ display:"block", minWidth:320 }}>
+        {[0,0.5,1].map(f=>(
+          <line key={f} x1={padL} x2={width-padR}
+            y1={height-padB-f*(height-padT-padB)} y2={height-padB-f*(height-padT-padB)}
+            stroke="#2A2A3A" strokeWidth={1} />
+        ))}
+        <polyline points={points} fill="none" stroke="#E8A838" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        {data.map((d,i)=>(
+          <g key={d.label} onMouseEnter={()=>setHoverIdx(i)} onMouseLeave={()=>setHoverIdx(null)} style={{ cursor:"pointer" }}>
+            <circle cx={x(i)} cy={y(d.value)} r={hoverIdx===i?6:4} fill="#E8A838" stroke="#0D0D14" strokeWidth={1.5} />
+            {(hoverIdx===i || showAllLabels) && (
+              <text x={x(i)} y={height-6} textAnchor="middle" fontSize="10" fill="#8888AA">{d.label}</text>
+            )}
+            {hoverIdx===i && (
+              <text x={x(i)} y={Math.max(y(d.value)-10,12)} textAnchor="middle" fontSize="11" fill="#F5E6C8" fontWeight="700">{d.value}</text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 // ─── Report Tab ───────────────────────────────────────────────────────────────
+const MIN_FOR_CHARTS   = 5;
+const TOP_BILLED_CAST  = 8;
+const CREDITS_CACHE_KEY = "mm_credits_cache_v1";
+const CREDITS_BATCH_SIZE = 20;
+
+function loadCreditsCache() {
+  try { return JSON.parse(localStorage.getItem(CREDITS_CACHE_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveCreditsCache(cache) {
+  try { localStorage.setItem(CREDITS_CACHE_KEY, JSON.stringify(cache)); } catch { /* storage full/unavailable — cache just won't persist */ }
+}
+
 function ReportTab({ watchlog, userEmail }) {
+  const [credits,        setCredits]        = useState(loadCreditsCache);
+  const [creditsLoading, setCreditsLoading]  = useState(false);
+  const fetchedIds = useRef(new Set(Object.keys(loadCreditsCache())));
+
+  const showCharts   = watchlog.length >= MIN_FOR_CHARTS;
+  const linkedMovies = watchlog.filter(m=>m.tmdb_id);
+
+  useEffect(() => {
+    if (!showCharts) return;
+    const missing = linkedMovies.filter(m=>!fetchedIds.current.has(String(m.tmdb_id)));
+    if (missing.length===0) return;
+    missing.forEach(m=>fetchedIds.current.add(String(m.tmdb_id)));
+    let cancelled = false;
+    setCreditsLoading(true);
+
+    (async () => {
+      // Fetched in small batches (rather than one burst of N requests) so a large
+      // back-catalog of logged movies doesn't fire hundreds of parallel requests at once.
+      for (let i=0; i<missing.length; i+=CREDITS_BATCH_SIZE) {
+        if (cancelled) return;
+        const batch = missing.slice(i, i+CREDITS_BATCH_SIZE);
+        const pairs = await Promise.all(batch.map(m =>
+          tmdb(`/movie/${m.tmdb_id}/credits`, { language:"en-US" }).then(d=>[m.tmdb_id,d]).catch(()=>[m.tmdb_id,null])
+        ));
+        if (cancelled) return;
+        setCredits(prev => {
+          const next = { ...prev };
+          pairs.forEach(([id,d])=>{ if(d) next[id]=d; });
+          saveCreditsCache(next);
+          return next;
+        });
+      }
+      if (!cancelled) setCreditsLoading(false);
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchlog, showCharts]);
+
+  const { topActors, topActresses, topDirectors } = useMemo(() => {
+    const actorCounts = new Map(), actressCounts = new Map(), directorCounts = new Map();
+    Object.values(credits).forEach(c => {
+      (c.cast||[]).slice(0, TOP_BILLED_CAST).forEach(p => {
+        const bucket = p.gender===2 ? actorCounts : p.gender===1 ? actressCounts : null;
+        if (!bucket) return;
+        bucket.set(p.name, (bucket.get(p.name)||0)+1);
+      });
+      (c.crew||[]).filter(p=>p.job==="Director").forEach(p => {
+        directorCounts.set(p.name, (directorCounts.get(p.name)||0)+1);
+      });
+    });
+    const topN = map => [...map.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(([label,value])=>({ label, value }));
+    return { topActors: topN(actorCounts), topActresses: topN(actressCounts), topDirectors: topN(directorCounts) };
+  }, [credits]);
+
+  const yearData = useMemo(() => {
+    const counts = {};
+    watchlog.forEach(m => { if (m.year) counts[m.year] = (counts[m.year]||0)+1; });
+    return Object.entries(counts).map(([label,value])=>({ label, value })).sort((a,b)=>Number(a.label)-Number(b.label));
+  }, [watchlog]);
+
   if (watchlog.length===0) return (
     <div style={{ textAlign:"center", padding:"3rem", color:"#8888AA" }}>
       <div style={{ fontSize:40, marginBottom:12 }}>📋</div>
@@ -700,6 +843,7 @@ function ReportTab({ watchlog, userEmail }) {
   const rated       = watchlog.filter(m=>m.rating>0);
   const avgRating   = rated.length?(rated.reduce((a,b)=>a+b.rating,0)/rated.length).toFixed(1):"—";
   const genreCounts = watchlog.reduce((acc,m)=>{ if(m.genre) acc[m.genre]=(acc[m.genre]||0)+1; return acc; },{});
+  const genreData   = Object.entries(genreCounts).map(([label,value])=>({ label, value })).sort((a,b)=>b.value-a.value);
   const topGenre    = Object.entries(genreCounts).sort((a,b)=>b[1]-a[1])[0];
   const top5        = [...watchlog].sort((a,b)=>b.rating-a.rating).slice(0,5);
   const recent5     = [...watchlog].sort((a,b)=>new Date(b.watch_date)-new Date(a.watch_date)).slice(0,5);
@@ -771,17 +915,59 @@ ${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||
           ))}
         </div>
       </div>
-      {Object.keys(genreCounts).length>0&&(
-        <div>
-          <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0 }}>Genre Breakdown</h3>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-            {Object.entries(genreCounts).sort((a,b)=>b[1]-a[1]).map(([g,n])=>(
-              <div key={g} style={{ background:"#16161F", border:"1px solid #2A2A3A", borderRadius:8, padding:"6px 14px", display:"flex", gap:8, alignItems:"center" }}>
-                <span style={{ color:"#F5E6C8", fontSize:14 }}>{g}</span>
-                <span style={{ background:"#E8A838", color:"#0D0D14", borderRadius:20, padding:"1px 7px", fontSize:12, fontWeight:700 }}>{n}</span>
-              </div>
-            ))}
+      {!showCharts && (
+        <p style={{ color:"#8888AA", fontSize:14 }}>
+          Log {MIN_FOR_CHARTS - total} more movie{MIN_FOR_CHARTS-total===1?"":"s"} to unlock charts and stats.
+        </p>
+      )}
+
+      {showCharts && (
+        <div style={{ display:"flex", flexDirection:"column", gap:"2rem" }}>
+          <div>
+            <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0, marginBottom:12 }}>Genre Allocation</h3>
+            <BarChart data={genreData} />
           </div>
+
+          <div>
+            <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0, marginBottom:12 }}>Year Allocation</h3>
+            <LineChart data={yearData} />
+          </div>
+
+          <div>
+            <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0, marginBottom:4 }}>Top 10 Actors</h3>
+            <p style={{ color:"#555577", fontSize:12, marginTop:0, marginBottom:12 }}>By appearance count among top-billed cast in your linked movies.</p>
+            {creditsLoading && topActors.length===0
+              ? <p style={{ color:"#8888AA", fontSize:13 }}>Loading cast data…</p>
+              : topActors.length>0
+                ? <BarChart data={topActors} />
+                : <p style={{ color:"#8888AA", fontSize:13 }}>Not enough linked movies yet.</p>}
+          </div>
+
+          <div>
+            <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0, marginBottom:4 }}>Top 10 Actresses</h3>
+            <p style={{ color:"#555577", fontSize:12, marginTop:0, marginBottom:12 }}>By appearance count among top-billed cast in your linked movies.</p>
+            {creditsLoading && topActresses.length===0
+              ? <p style={{ color:"#8888AA", fontSize:13 }}>Loading cast data…</p>
+              : topActresses.length>0
+                ? <BarChart data={topActresses} />
+                : <p style={{ color:"#8888AA", fontSize:13 }}>Not enough linked movies yet.</p>}
+          </div>
+
+          <div>
+            <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0, marginBottom:4 }}>Top 10 Directors</h3>
+            <p style={{ color:"#555577", fontSize:12, marginTop:0, marginBottom:12 }}>By appearance count in your linked movies.</p>
+            {creditsLoading && topDirectors.length===0
+              ? <p style={{ color:"#8888AA", fontSize:13 }}>Loading crew data…</p>
+              : topDirectors.length>0
+                ? <BarChart data={topDirectors} />
+                : <p style={{ color:"#8888AA", fontSize:13 }}>Not enough linked movies yet.</p>}
+          </div>
+
+          {linkedMovies.length<total && (
+            <p style={{ color:"#555577", fontSize:12, margin:0 }}>
+              {total-linkedMovies.length} of your {total} logged movies {total-linkedMovies.length===1?"was":"were"} entered manually and {total-linkedMovies.length===1?"isn't":"aren't"} linked to TMDB, so {total-linkedMovies.length===1?"it's":"they're"} excluded from the actor/actress/director charts above.
+            </p>
+          )}
         </div>
       )}
     </div>
