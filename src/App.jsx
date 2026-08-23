@@ -771,15 +771,16 @@ function saveCreditsCache(cache) {
 }
 
 function ReportTab({ watchlog, userEmail }) {
-  const [credits,        setCredits]        = useState(loadCreditsCache);
-  const [creditsLoading, setCreditsLoading]  = useState(false);
+  const [credits,         setCredits]         = useState(loadCreditsCache);
+  const [creditsLoading,  setCreditsLoading]  = useState(false);
+  const [chartsRequested, setChartsRequested] = useState(false);
   const fetchedIds = useRef(new Set(Object.keys(loadCreditsCache())));
 
   const showCharts   = watchlog.length >= MIN_FOR_CHARTS;
   const linkedMovies = watchlog.filter(m=>m.tmdb_id);
 
   useEffect(() => {
-    if (!showCharts) return;
+    if (!showCharts || !chartsRequested) return;
     const missing = linkedMovies.filter(m=>!fetchedIds.current.has(String(m.tmdb_id)));
     if (missing.length===0) return;
     missing.forEach(m=>fetchedIds.current.add(String(m.tmdb_id)));
@@ -808,7 +809,7 @@ function ReportTab({ watchlog, userEmail }) {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchlog, showCharts]);
+  }, [watchlog, showCharts, chartsRequested]);
 
   const { topActors, topActresses, topDirectors } = useMemo(() => {
     const actorCounts = new Map(), actressCounts = new Map(), directorCounts = new Map();
@@ -921,7 +922,13 @@ ${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||
         </p>
       )}
 
-      {showCharts && (
+      {showCharts && !chartsRequested && (
+        <button onClick={()=>setChartsRequested(true)} style={{ padding:"9px 18px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#E8A838", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600 }}>
+          📊 Show Charts &amp; Stats
+        </button>
+      )}
+
+      {showCharts && chartsRequested && (
         <div style={{ display:"flex", flexDirection:"column", gap:"2rem" }}>
           <div>
             <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0, marginBottom:12 }}>Genre Allocation</h3>
