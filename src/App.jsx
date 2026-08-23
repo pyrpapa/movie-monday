@@ -762,70 +762,55 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
 }
 
 // ─── Bar Chart ────────────────────────────────────────────────────────────────
+// data items: {label, value, movies?} — items with a non-empty `movies` array
+// (journal entries) become clickable, expanding to list them underneath.
 function BarChart({ data }) {
   const [hoverIdx, setHoverIdx] = useState(null);
+  const [openIdx,  setOpenIdx]  = useState(null);
   if (!data.length) return null;
   const max = Math.max(1, ...data.map(d=>d.value));
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-      {data.map((d,i)=>(
-        <div key={d.label} style={{ display:"flex", alignItems:"center", gap:10 }}
-          onMouseEnter={()=>setHoverIdx(i)} onMouseLeave={()=>setHoverIdx(null)}>
-          <span style={{
-            width:130, flexShrink:0, color:"#AAAACC", fontSize:13, textAlign:"right",
-            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"
-          }} title={d.label}>{d.label}</span>
-          <div style={{ flex:1, background:"#0D0D14", borderRadius:4, height:18, position:"relative" }}>
-            <div style={{
-              width:`${Math.max((d.value/max)*100, 3)}%`, height:"100%",
-              background: hoverIdx===i ? "#F5C463" : "#E8A838",
-              borderRadius:4, transition:"width 0.3s ease, background 0.15s"
-            }} />
+      {data.map((d,i)=>{
+        const clickable = Array.isArray(d.movies) && d.movies.length>0;
+        const isOpen = clickable && openIdx===i;
+        return (
+          <div key={d.label}>
+            <div
+              onMouseEnter={()=>setHoverIdx(i)} onMouseLeave={()=>setHoverIdx(null)}
+              onClick={()=>clickable && setOpenIdx(isOpen ? null : i)}
+              style={{ display:"flex", alignItems:"center", gap:10, cursor: clickable ? "pointer" : "default" }}
+            >
+              <span style={{
+                width:130, flexShrink:0, color:"#AAAACC", fontSize:13, textAlign:"right",
+                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"
+              }} title={d.label}>{d.label}</span>
+              <div style={{ flex:1, background:"#0D0D14", borderRadius:4, height:18, position:"relative" }}>
+                <div style={{
+                  width:`${Math.max((d.value/max)*100, 3)}%`, height:"100%",
+                  background: isOpen ? "#F5C463" : hoverIdx===i ? "#F0BB55" : "#E8A838",
+                  borderRadius:4, transition:"width 0.3s ease, background 0.15s"
+                }} />
+              </div>
+              <span style={{ width:26, flexShrink:0, color:"#F5E6C8", fontSize:13, fontWeight:600 }}>{d.value}</span>
+              {clickable && <span style={{ width:12, flexShrink:0, color:"#555577", fontSize:11 }}>{isOpen?"▾":"▸"}</span>}
+            </div>
+            {isOpen && (
+              <div style={{ margin:"6px 0 4px 140px", display:"flex", flexDirection:"column", gap:6 }}>
+                {d.movies.map(m=>(
+                  <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <Poster src={m.poster} title={m.title} width={24} height={35} />
+                    <span style={{ color:"#F5E6C8", fontSize:13 }}>{m.title}</span>
+                    {m.year && <span style={{ color:"#8888AA", fontSize:12 }}>({m.year})</span>}
+                    <Stars value={m.rating} size={11} />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <span style={{ width:26, flexShrink:0, color:"#F5E6C8", fontSize:13, fontWeight:600 }}>{d.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Line Chart ───────────────────────────────────────────────────────────────
-function LineChart({ data }) {
-  const [hoverIdx, setHoverIdx] = useState(null);
-  if (data.length<2) return (
-    <p style={{ color:"#8888AA", fontSize:13 }}>Need at least two different years to draw a trend.</p>
-  );
-
-  const width=640, height=180, padL=8, padR=8, padT=16, padB=24;
-  const max = Math.max(...data.map(d=>d.value));
-  const n = data.length;
-  const x = i => padL + (n===1 ? 0 : (i/(n-1)) * (width-padL-padR));
-  const y = v => height-padB - (max===0 ? 0 : (v/max) * (height-padT-padB));
-  const points = data.map((d,i)=>`${x(i)},${y(d.value)}`).join(" ");
-  const showAllLabels = n<=14;
-
-  return (
-    <div style={{ overflowX:"auto" }}>
-      <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} style={{ display:"block", minWidth:320 }}>
-        {[0,0.5,1].map(f=>(
-          <line key={f} x1={padL} x2={width-padR}
-            y1={height-padB-f*(height-padT-padB)} y2={height-padB-f*(height-padT-padB)}
-            stroke="#2A2A3A" strokeWidth={1} />
-        ))}
-        <polyline points={points} fill="none" stroke="#E8A838" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        {data.map((d,i)=>(
-          <g key={d.label} onMouseEnter={()=>setHoverIdx(i)} onMouseLeave={()=>setHoverIdx(null)} style={{ cursor:"pointer" }}>
-            <circle cx={x(i)} cy={y(d.value)} r={hoverIdx===i?6:4} fill="#E8A838" stroke="#0D0D14" strokeWidth={1.5} />
-            {(hoverIdx===i || showAllLabels) && (
-              <text x={x(i)} y={height-6} textAnchor="middle" fontSize="10" fill="#8888AA">{d.label}</text>
-            )}
-            {hoverIdx===i && (
-              <text x={x(i)} y={Math.max(y(d.value)-10,12)} textAnchor="middle" fontSize="11" fill="#F5E6C8" fontWeight="700">{d.value}</text>
-            )}
-          </g>
-        ))}
-      </svg>
+        );
+      })}
     </div>
   );
 }
@@ -885,26 +870,48 @@ function ReportTab({ watchlog, userEmail }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchlog, showCharts, chartsRequested]);
 
+  const tmdbIdToEntries = useMemo(() => {
+    const map = new Map();
+    watchlog.forEach(m => {
+      if (!m.tmdb_id) return;
+      const key = String(m.tmdb_id);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(m);
+    });
+    return map;
+  }, [watchlog]);
+
   const { topActors, topActresses, topDirectors } = useMemo(() => {
-    const actorCounts = new Map(), actressCounts = new Map(), directorCounts = new Map();
-    Object.values(credits).forEach(c => {
+    const actorMap = new Map(), actressMap = new Map(), directorMap = new Map();
+    Object.entries(credits).forEach(([tmdbId, c]) => {
+      const entries = tmdbIdToEntries.get(String(tmdbId)) || [];
+      if (entries.length===0) return;
       (c.cast||[]).slice(0, TOP_BILLED_CAST).forEach(p => {
-        const bucket = p.gender===2 ? actorCounts : p.gender===1 ? actressCounts : null;
+        const bucket = p.gender===2 ? actorMap : p.gender===1 ? actressMap : null;
         if (!bucket) return;
-        bucket.set(p.name, (bucket.get(p.name)||0)+1);
+        const cur = bucket.get(p.name) || [];
+        cur.push(...entries);
+        bucket.set(p.name, cur);
       });
       (c.crew||[]).filter(p=>p.job==="Director").forEach(p => {
-        directorCounts.set(p.name, (directorCounts.get(p.name)||0)+1);
+        const cur = directorMap.get(p.name) || [];
+        cur.push(...entries);
+        directorMap.set(p.name, cur);
       });
     });
-    const topN = map => [...map.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(([label,value])=>({ label, value }));
-    return { topActors: topN(actorCounts), topActresses: topN(actressCounts), topDirectors: topN(directorCounts) };
-  }, [credits]);
+    const topN = map => [...map.entries()]
+      .sort((a,b)=>b[1].length-a[1].length)
+      .slice(0,10)
+      .map(([label,movies])=>({ label, value:movies.length, movies }));
+    return { topActors: topN(actorMap), topActresses: topN(actressMap), topDirectors: topN(directorMap) };
+  }, [credits, tmdbIdToEntries]);
 
-  const yearData = useMemo(() => {
+  const decadeData = useMemo(() => {
     const counts = {};
-    watchlog.forEach(m => { if (m.year) counts[m.year] = (counts[m.year]||0)+1; });
-    return Object.entries(counts).map(([label,value])=>({ label, value })).sort((a,b)=>Number(a.label)-Number(b.label));
+    watchlog.forEach(m => { if (m.year) { const d = Math.floor(Number(m.year)/10)*10; counts[d] = (counts[d]||0)+1; } });
+    return Object.entries(counts)
+      .map(([decade,value])=>({ label:`${decade}s`, value, _decade:Number(decade) }))
+      .sort((a,b)=>a._decade-b._decade);
   }, [watchlog]);
 
   if (watchlog.length===0) return (
@@ -1010,8 +1017,8 @@ ${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||
           </div>
 
           <div>
-            <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0, marginBottom:12 }}>Year Allocation</h3>
-            <LineChart data={yearData} />
+            <h3 style={{ color:"#F5E6C8", fontSize:15, marginTop:0, marginBottom:12 }}>Decade Allocation</h3>
+            <BarChart data={decadeData} />
           </div>
 
           <div>
