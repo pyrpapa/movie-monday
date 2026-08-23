@@ -207,7 +207,7 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
         [...(credits.cast||[]), ...(credits.crew||[])].forEach(m=>{ if(!byId.has(m.id)) byId.set(m.id, m); });
         const filmography = [...byId.values()]
           .filter(m=>m.release_date)
-          .sort((a,b)=>new Date(b.release_date)-new Date(a.release_date));
+          .sort((a,b)=>b.popularity-a.popularity);
         setPersonMovies(filmography);
       }
       if (movieData.results?.length) setResults(movieData.results.slice(0,12));
@@ -326,7 +326,7 @@ function SearchTab({ onSelectMovie }) {
         [...(credits.cast||[]), ...(credits.crew||[])].forEach(m=>{ if(!byId.has(m.id)) byId.set(m.id, m); });
         const filmography = [...byId.values()]
           .filter(m=>m.release_date)
-          .sort((a,b)=>new Date(b.release_date)-new Date(a.release_date));
+          .sort((a,b)=>b.popularity-a.popularity);
         setPersonMovies(filmography);
       }
       if (movieData.results?.length) setResults(movieData.results.slice(0,12));
