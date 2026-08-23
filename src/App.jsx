@@ -591,7 +591,7 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
 }
 
 // ─── Hall of Fame Tab ────────────────────────────────────────────────────────
-function GoldStarTab({ watchlog, onReorder }) {
+function GoldStarTab({ watchlog, onReorder, onToggleGold }) {
   const goldMovies = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank);
   const [dragIdx,      setDragIdx]      = useState(null);
   const [overIdx,      setOverIdx]      = useState(null);
@@ -652,6 +652,10 @@ function GoldStarTab({ watchlog, onReorder }) {
                   <p style={{ margin:0, color:"#F5E6C8", fontSize:15, fontFamily:"'Georgia',serif", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
                   {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
                 </div>
+                <button onClick={()=>onToggleGold(m)} title="Remove from Hall of Fame"
+                  style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, padding:0, lineHeight:1, color:"#E8A838", flexShrink:0 }}>
+                  ⭐
+                </button>
                 <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>
               </div>
               {showLine && overPosition==="below" && (
@@ -1308,7 +1312,7 @@ export default function App() {
         {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} loading={loadingLog} />}
         {tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} />}
         {tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
-        {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} />}
+        {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} onToggleGold={handleToggleGoldStar} />}
         {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={user.email} />}
       </main>
 
