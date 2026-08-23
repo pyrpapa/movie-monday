@@ -68,7 +68,10 @@ function AuthScreen({ onLogin }) {
     if (!email.trim() || !password.trim()) { setError("Please fill in all fields."); setLoading(false); return; }
 
     if (mode === "register") {
-      const { error: e } = await supabase.auth.signUp({ email, password });
+      const { error: e } = await supabase.auth.signUp({
+        email, password,
+        options: { emailRedirectTo: window.location.origin + import.meta.env.BASE_URL }
+      });
       if (e) { setError(e.message); setLoading(false); return; }
       setError("Check your email to confirm your account, then sign in.");
     } else {
