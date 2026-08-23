@@ -485,7 +485,12 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
   const [filter,     setFilter]     = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
   const [sort,       setSort]       = useState("recent");
-  const [expanded, setExpanded] = useState(() => {
+  const [expandedYears, setExpandedYears] = useState(() => {
+    if (watchlog.length===0) return new Set();
+    const newest = [...watchlog].sort((a,b)=>new Date(b.watch_date)-new Date(a.watch_date))[0];
+    return new Set([watchYearOf(newest.watch_date)]);
+  });
+  const [expandedMonths, setExpandedMonths] = useState(() => {
     if (watchlog.length===0) return new Set();
     const newest = [...watchlog].sort((a,b)=>new Date(b.watch_date)-new Date(a.watch_date))[0];
     return new Set([monthKeyOf(newest.watch_date)]);
@@ -504,19 +509,34 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
   });
 
   const groupByDate = sort==="recent";
-  const groups = [];
+  const yearGroups = [];
   if (groupByDate) {
-    const byKey = new Map();
+    const byYear = new Map();
     filtered.forEach(m=>{
-      const key = monthKeyOf(m.watch_date);
-      if (!byKey.has(key)) byKey.set(key, { key, label: monthLabelOf(m.watch_date), movies: [] });
-      byKey.get(key).movies.push(m);
+      const y = watchYearOf(m.watch_date) || "Undated";
+      if (!byYear.has(y)) byYear.set(y, []);
+      byYear.get(y).push(m);
     });
-    groups.push(...byKey.values());
+    byYear.forEach((movies, year) => {
+      const byMonth = new Map();
+      movies.forEach(m=>{
+        const key = monthKeyOf(m.watch_date);
+        if (!byMonth.has(key)) byMonth.set(key, { key, label: monthLabelOf(m.watch_date), movies: [] });
+        byMonth.get(key).movies.push(m);
+      });
+      yearGroups.push({ year, count: movies.length, monthGroups: [...byMonth.values()] });
+    });
   }
 
-  function toggle(key) {
-    setExpanded(prev => {
+  function toggleYear(year) {
+    setExpandedYears(prev => {
+      const next = new Set(prev);
+      next.has(year) ? next.delete(year) : next.add(year);
+      return next;
+    });
+  }
+  function toggleMonth(key) {
+    setExpandedMonths(prev => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
@@ -558,23 +578,43 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
       )}
 
       {groupByDate ? (
-        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          {groups.map(g=>{
-            const isOpen = expanded.has(g.key);
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {yearGroups.map(yg=>{
+            const yearOpen = expandedYears.has(yg.year);
             return (
-              <div key={g.key}>
-                <button onClick={()=>toggle(g.key)} style={{
+              <div key={yg.year}>
+                <button onClick={()=>toggleYear(yg.year)} style={{
                   display:"flex", alignItems:"center", gap:10, width:"100%",
-                  background:"none", border:"none", borderBottom:"1px solid #2A2A3A",
+                  background:"none", border:"none", borderBottom:"1px solid #3A3A5A",
                   padding:"10px 4px", cursor:"pointer", textAlign:"left", fontFamily:"inherit"
                 }}>
-                  <span style={{ color:"#E8A838", fontSize:11 }}>{isOpen?"▾":"▸"}</span>
-                  <span style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", fontSize:16, letterSpacing:"0.5px" }}>{g.label}</span>
-                  <span style={{ color:"#8888AA", fontSize:13 }}>({g.movies.length})</span>
+                  <span style={{ color:"#E8A838", fontSize:12 }}>{yearOpen?"▾":"▸"}</span>
+                  <span style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", fontSize:19, fontWeight:700, letterSpacing:"0.5px" }}>{yg.year}</span>
+                  <span style={{ color:"#8888AA", fontSize:13 }}>({yg.count})</span>
                 </button>
-                {isOpen && (
-                  <div style={{ display:"flex", flexDirection:"column", gap:10, margin:"10px 0 16px" }}>
-                    {g.movies.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} onToggleGold={onToggleGold} />)}
+                {yearOpen && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:4, margin:"8px 0 14px 22px" }}>
+                    {yg.monthGroups.map(g=>{
+                      const isOpen = expandedMonths.has(g.key);
+                      return (
+                        <div key={g.key}>
+                          <button onClick={()=>toggleMonth(g.key)} style={{
+                            display:"flex", alignItems:"center", gap:10, width:"100%",
+                            background:"none", border:"none", borderBottom:"1px solid #2A2A3A",
+                            padding:"8px 4px", cursor:"pointer", textAlign:"left", fontFamily:"inherit"
+                          }}>
+                            <span style={{ color:"#E8A838", fontSize:11 }}>{isOpen?"▾":"▸"}</span>
+                            <span style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", fontSize:16, letterSpacing:"0.5px" }}>{g.label}</span>
+                            <span style={{ color:"#8888AA", fontSize:13 }}>({g.movies.length})</span>
+                          </button>
+                          {isOpen && (
+                            <div style={{ display:"flex", flexDirection:"column", gap:10, margin:"10px 0 16px" }}>
+                              {g.movies.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} onToggleGold={onToggleGold} />)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
