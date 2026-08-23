@@ -184,18 +184,34 @@ function LogMovieModal({ prefill, onSave, onClose }) {
 
 // ─── Log Movie Search Modal ─────────────────────────────────────────────────
 function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
-  const [query,   setQuery]   = useState("");
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
+  const [query,        setQuery]        = useState("");
+  const [results,      setResults]      = useState([]);
+  const [person,       setPerson]       = useState(null);
+  const [personMovies, setPersonMovies] = useState([]);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState("");
 
   async function search() {
     if (!query.trim()) return;
-    setLoading(true); setError(""); setResults([]);
+    setLoading(true); setError(""); setResults([]); setPerson(null); setPersonMovies([]);
     try {
-      const data = await tmdb("/search/movie", { query, include_adult:false, language:"en-US", page:1 });
-      if (data.results?.length) setResults(data.results.slice(0,12));
-      else setError("No results found.");
+      const [movieData, personData] = await Promise.all([
+        tmdb("/search/movie",  { query, include_adult:false, language:"en-US", page:1 }),
+        tmdb("/search/person", { query, include_adult:false, language:"en-US", page:1 })
+      ]);
+      const topPerson = personData.results?.[0];
+      if (topPerson) {
+        setPerson(topPerson);
+        const credits = await tmdb(`/person/${topPerson.id}/movie_credits`, { language:"en-US" });
+        const byId = new Map();
+        [...(credits.cast||[]), ...(credits.crew||[])].forEach(m=>{ if(!byId.has(m.id)) byId.set(m.id, m); });
+        const filmography = [...byId.values()]
+          .filter(m=>m.release_date)
+          .sort((a,b)=>new Date(b.release_date)-new Date(a.release_date));
+        setPersonMovies(filmography.slice(0,12));
+      }
+      if (movieData.results?.length) setResults(movieData.results.slice(0,12));
+      if (!topPerson && !movieData.results?.length) setError("No results found.");
     } catch { setError("Search failed — check your TMDB token."); }
     setLoading(false);
   }
@@ -229,22 +245,50 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
         </div>
         {error && <p style={{ color:"#E05555", fontSize:14 }}>{error}</p>}
 
-        {results.length>0 && (
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(110px,1fr))", gap:10, marginBottom:"1rem" }}>
-            {results.map(m=>(
-              <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
-                style={{ background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
-                onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
-                onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
-                {m.poster_path
-                  ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
-                  : <div style={{ aspectRatio:"2/3", background:"#1A1A28", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>🎬</div>}
-                <div style={{ padding:"6px 8px" }}>
-                  <p style={{ margin:0, color:"#F5E6C8", fontSize:12, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
-                  <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:11 }}>{(m.release_date||"").slice(0,4)}</p>
+        {person && personMovies.length>0 && (
+          <div style={{ marginBottom:"1rem" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+              <Poster src={person.profile_path?TMDB_IMG+person.profile_path:""} title={person.name} width={28} height={28} />
+              <h3 style={{ margin:0, color:"#F5E6C8", fontSize:14 }}>🎭 Movies with {person.name}</h3>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(110px,1fr))", gap:10 }}>
+              {personMovies.map(m=>(
+                <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
+                  style={{ background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
+                  {m.poster_path
+                    ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
+                    : <div style={{ aspectRatio:"2/3", background:"#1A1A28", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>🎬</div>}
+                  <div style={{ padding:"6px 8px" }}>
+                    <p style={{ margin:0, color:"#F5E6C8", fontSize:12, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
+                    <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:11 }}>{(m.release_date||"").slice(0,4)}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          </div>
+        )}
+
+        {results.length>0 && (
+          <div style={{ marginBottom:"1rem" }}>
+            {person && <h3 style={{ margin:"0 0 8px", color:"#F5E6C8", fontSize:14 }}>Matching Titles</h3>}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(110px,1fr))", gap:10 }}>
+              {results.map(m=>(
+                <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
+                  style={{ background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
+                  {m.poster_path
+                    ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
+                    : <div style={{ aspectRatio:"2/3", background:"#1A1A28", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>🎬</div>}
+                  <div style={{ padding:"6px 8px" }}>
+                    <p style={{ margin:0, color:"#F5E6C8", fontSize:12, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
+                    <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:11 }}>{(m.release_date||"").slice(0,4)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -258,19 +302,35 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
 
 // ─── Search Tab ───────────────────────────────────────────────────────────────
 function SearchTab({ onSelectMovie }) {
-  const [query,    setQuery]    = useState("");
-  const [results,  setResults]  = useState([]);
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState("");
-  const [selected, setSelected] = useState(null);
+  const [query,        setQuery]        = useState("");
+  const [results,      setResults]      = useState([]);
+  const [person,       setPerson]       = useState(null);
+  const [personMovies, setPersonMovies] = useState([]);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState("");
+  const [selected,     setSelected]     = useState(null);
 
   async function search() {
     if (!query.trim()) return;
-    setLoading(true); setError(""); setResults([]); setSelected(null);
+    setLoading(true); setError(""); setResults([]); setSelected(null); setPerson(null); setPersonMovies([]);
     try {
-      const data = await tmdb("/search/movie", { query, include_adult:false, language:"en-US", page:1 });
-      if (data.results?.length) setResults(data.results.slice(0,12));
-      else setError("No results found.");
+      const [movieData, personData] = await Promise.all([
+        tmdb("/search/movie",  { query, include_adult:false, language:"en-US", page:1 }),
+        tmdb("/search/person", { query, include_adult:false, language:"en-US", page:1 })
+      ]);
+      const topPerson = personData.results?.[0];
+      if (topPerson) {
+        setPerson(topPerson);
+        const credits = await tmdb(`/person/${topPerson.id}/movie_credits`, { language:"en-US" });
+        const byId = new Map();
+        [...(credits.cast||[]), ...(credits.crew||[])].forEach(m=>{ if(!byId.has(m.id)) byId.set(m.id, m); });
+        const filmography = [...byId.values()]
+          .filter(m=>m.release_date)
+          .sort((a,b)=>new Date(b.release_date)-new Date(a.release_date));
+        setPersonMovies(filmography.slice(0,18));
+      }
+      if (movieData.results?.length) setResults(movieData.results.slice(0,12));
+      if (!topPerson && !movieData.results?.length) setError("No results found.");
     } catch { setError("Search failed — check your TMDB token."); }
     setLoading(false);
   }
@@ -330,22 +390,54 @@ function SearchTab({ onSelectMovie }) {
         </div>
       )}
 
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px,1fr))", gap:12 }}>
-        {results.map(m=>(
-          <div key={m.id} onClick={()=>selectMovie(m)}
-            style={{ background:"#16161F", border:`1px solid ${selected?.id===m.id?"#E8A838":"#2A2A3A"}`, borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
-            onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
-            onMouseLeave={e=>e.currentTarget.style.borderColor=selected?.id===m.id?"#E8A838":"#2A2A3A"}>
-            {m.poster_path
-              ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
-              : <div style={{ aspectRatio:"2/3", background:"#0D0D14", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>🎬</div>}
-            <div style={{ padding:"8px 10px" }}>
-              <p style={{ margin:0, color:"#F5E6C8", fontSize:13, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
-              <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:12 }}>{(m.release_date||"").slice(0,4)}</p>
-            </div>
+      {person && personMovies.length>0 && (
+        <div style={{ marginBottom:"1.5rem" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+            <Poster src={person.profile_path?TMDB_IMG+person.profile_path:""} title={person.name} width={36} height={36} />
+            <h3 style={{ margin:0, color:"#F5E6C8", fontSize:16, fontFamily:"'Georgia',serif" }}>🎭 Movies with {person.name}</h3>
           </div>
-        ))}
-      </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px,1fr))", gap:12 }}>
+            {personMovies.map(m=>(
+              <div key={m.id} onClick={()=>selectMovie(m)}
+                style={{ background:"#16161F", border:`1px solid ${selected?.id===m.id?"#E8A838":"#2A2A3A"}`, borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=selected?.id===m.id?"#E8A838":"#2A2A3A"}>
+                {m.poster_path
+                  ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
+                  : <div style={{ aspectRatio:"2/3", background:"#0D0D14", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>🎬</div>}
+                <div style={{ padding:"8px 10px" }}>
+                  <p style={{ margin:0, color:"#F5E6C8", fontSize:13, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
+                  <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:12 }}>
+                    {(m.release_date||"").slice(0,4)}{m.character?` · ${m.character}`:m.job?` · ${m.job}`:""}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {results.length>0 && (
+        <div>
+          {person && <h3 style={{ color:"#F5E6C8", fontSize:16, fontFamily:"'Georgia',serif", marginTop:0, marginBottom:10 }}>Matching Titles</h3>}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px,1fr))", gap:12 }}>
+            {results.map(m=>(
+              <div key={m.id} onClick={()=>selectMovie(m)}
+                style={{ background:"#16161F", border:`1px solid ${selected?.id===m.id?"#E8A838":"#2A2A3A"}`, borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=selected?.id===m.id?"#E8A838":"#2A2A3A"}>
+                {m.poster_path
+                  ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
+                  : <div style={{ aspectRatio:"2/3", background:"#0D0D14", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>🎬</div>}
+                <div style={{ padding:"8px 10px" }}>
+                  <p style={{ margin:0, color:"#F5E6C8", fontSize:13, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
+                  <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:12 }}>{(m.release_date||"").slice(0,4)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
