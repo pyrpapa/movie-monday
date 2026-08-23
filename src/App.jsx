@@ -208,7 +208,7 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
         const filmography = [...byId.values()]
           .filter(m=>m.release_date)
           .sort((a,b)=>new Date(b.release_date)-new Date(a.release_date));
-        setPersonMovies(filmography.slice(0,12));
+        setPersonMovies(filmography);
       }
       if (movieData.results?.length) setResults(movieData.results.slice(0,12));
       if (!topPerson && !movieData.results?.length) setError("No results found.");
@@ -327,7 +327,7 @@ function SearchTab({ onSelectMovie }) {
         const filmography = [...byId.values()]
           .filter(m=>m.release_date)
           .sort((a,b)=>new Date(b.release_date)-new Date(a.release_date));
-        setPersonMovies(filmography.slice(0,18));
+        setPersonMovies(filmography);
       }
       if (movieData.results?.length) setResults(movieData.results.slice(0,12));
       if (!topPerson && !movieData.results?.length) setError("No results found.");
