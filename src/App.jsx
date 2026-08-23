@@ -516,13 +516,23 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
   const [mode,        setMode]        = useState("criteria"); // "criteria" | "similar"
   const [genreId,     setGenreId]     = useState("");
   const [personQuery, setPersonQuery] = useState("");
+  const [decade,      setDecade]      = useState("");
   const [journalId,   setJournalId]   = useState("");
   const [suggestions, setSuggestions] = useState([]);
+  const [sortBy,      setSortBy]      = useState("popularity"); // "popularity" | "rating"
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState("");
   const [reason,      setReason]      = useState("");
 
   const journalWithTmdb = watchlog.filter(m=>m.tmdb_id);
+
+  const currentDecade = Math.floor(new Date().getFullYear()/10)*10;
+  const decades = [];
+  for (let d=currentDecade; d>=1950; d-=10) decades.push(d);
+
+  const sortedSuggestions = [...suggestions].sort((a,b)=>
+    sortBy==="rating" ? (b.vote_average||0)-(a.vote_average||0) : (b.popularity||0)-(a.popularity||0)
+  );
 
   function buildPrefill(m) {
     return {
@@ -539,12 +549,16 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
   }
 
   async function findByCriteria() {
-    if (!genreId && !personQuery.trim()) { setError("Pick a genre or enter a name."); return; }
+    if (!genreId && !personQuery.trim() && !decade) { setError("Pick a genre, decade, or enter a name."); return; }
     setLoading(true); setError(""); setSuggestions([]); setReason("");
     try {
       const params = { sort_by:"popularity.desc", "vote_count.gte":100, language:"en-US", page:1 };
       let personName = "";
       if (genreId) params.with_genres = genreId;
+      if (decade) {
+        params["primary_release_date.gte"] = `${decade}-01-01`;
+        params["primary_release_date.lte"] = `${Number(decade)+9}-12-31`;
+      }
       if (personQuery.trim()) {
         const personData = await tmdb("/search/person", { query:personQuery, include_adult:false, language:"en-US", page:1 });
         const person = personData.results?.[0];
@@ -554,7 +568,7 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
       }
       const data = await tmdb("/discover/movie", params);
       const logged = new Set(watchlog.map(m=>m.title?.toLowerCase()));
-      const bits = [genreId ? GENRE_MAP[genreId] : "", personName].filter(Boolean);
+      const bits = [genreId ? GENRE_MAP[genreId] : "", personName, decade ? `${decade}s` : ""].filter(Boolean);
       setSuggestions((data.results||[]).filter(m=>!logged.has((m.title||"").toLowerCase())));
       setReason(bits.length ? `Matching ${bits.join(" + ")}` : "");
     } catch { setError("Search failed — check your TMDB token."); }
@@ -599,6 +613,10 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
             <option value="">Any genre</option>
             {sortedGenres.map(([id,name])=><option key={id} value={id}>{name}</option>)}
           </select>
+          <select value={decade} onChange={e=>setDecade(e.target.value)} style={inp}>
+            <option value="">Any era</option>
+            {decades.map(d=><option key={d} value={d}>{d}s</option>)}
+          </select>
           <input value={personQuery} onChange={e=>setPersonQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&findByCriteria()}
             placeholder="Actor, actress, or director…" style={{ ...inp, flex:1, minWidth:180 }} />
           <button onClick={findByCriteria} style={{ padding:"9px 18px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
@@ -626,13 +644,28 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
       )}
 
       {error && <p style={{ color:"#E05555", fontSize:14 }}>{error}</p>}
-      {reason && <p style={{ color:"#8888AA", fontSize:14, marginTop:0, marginBottom:"1.25rem" }}>{reason}</p>}
+
+      {suggestions.length>0 && (
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.75rem", flexWrap:"wrap", gap:8 }}>
+          <p style={{ color:"#8888AA", fontSize:14, margin:0 }}>{reason}</p>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <label style={{ color:"#8888AA", fontSize:12 }}>Sort by</label>
+            <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{ ...inp, padding:"6px 10px", fontSize:13 }}>
+              <option value="popularity">Popularity</option>
+              <option value="rating">Rating</option>
+            </select>
+          </div>
+        </div>
+      )}
+      {suggestions.length===0 && reason && (
+        <p style={{ color:"#8888AA", fontSize:14, marginTop:0, marginBottom:"1.25rem" }}>{reason}</p>
+      )}
       {!loading && !error && reason && suggestions.length===0 && (
         <p style={{ color:"#8888AA", fontSize:14 }}>No matches — try different criteria.</p>
       )}
 
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px,1fr))", gap:12 }}>
-        {suggestions.map(m=>(
+        {sortedSuggestions.map(m=>(
           <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
             style={{ background:"#16161F", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
             onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
