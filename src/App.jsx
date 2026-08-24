@@ -762,6 +762,19 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
     });
   }
 
+  const allExpanded = groupByDate && yearGroups.length>0 &&
+    yearGroups.every(yg => expandedYears.has(yg.year) && yg.monthGroups.every(g=>expandedMonths.has(g.key)));
+
+  function toggleExpandAll() {
+    if (allExpanded) {
+      setExpandedYears(new Set());
+      setExpandedMonths(new Set());
+    } else {
+      setExpandedYears(new Set(yearGroups.map(yg=>yg.year)));
+      setExpandedMonths(new Set(yearGroups.flatMap(yg=>yg.monthGroups.map(g=>g.key))));
+    }
+  }
+
   const sel = { padding:"7px 12px", background:"#16161F", border:"1px solid #2A2A3A", borderRadius:8, color:"#F5E6C8", fontSize:13, outline:"none", fontFamily:"inherit" };
 
   if (loading) return <Spinner />;
@@ -783,6 +796,11 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
             <option value="recent">Most Recent</option>
             <option value="alpha">A–Z</option>
           </select>
+          {groupByDate && yearGroups.length>0 && (
+            <button onClick={toggleExpandAll} style={{ padding:"7px 12px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#8888AA", cursor:"pointer", fontFamily:"inherit", fontSize:13 }}>
+              {allExpanded ? "▾ Collapse All" : "▸ Expand All"}
+            </button>
+          )}
           <button onClick={onImportClick} style={{ padding:"7px 12px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#8888AA", cursor:"pointer", fontFamily:"inherit", fontSize:13 }}>
             ⬆ Import CSV
           </button>
