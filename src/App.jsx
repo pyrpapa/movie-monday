@@ -1791,7 +1791,13 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  },[watchlog, demoMode]);
+    // Deliberately watchlog.length, not watchlog: this effect's own setWatchlog
+    // calls merge overview text into existing rows without changing the array
+    // length, so depending on watchlog itself would make every batch's update
+    // retrigger the effect and cancel the loop's own next iteration — which is
+    // exactly what was cutting the backfill off after one batch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[watchlog.length, demoMode]);
 
   async function handleSaveMovie(entry, editId) {
     if (editId) {
