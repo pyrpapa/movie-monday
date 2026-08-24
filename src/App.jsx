@@ -163,7 +163,7 @@ function AuthScreen({ onLogin }) {
   const inp = { padding:"10px 14px", background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:8, color:"#F5E6C8", fontSize:15, outline:"none", fontFamily:"inherit", width:"100%", boxSizing:"border-box" };
 
   return (
-    <div style={{ minHeight:"100vh", background:"#0D0D14", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Georgia',serif" }}>
+    <div style={{ minHeight:"100vh", background:"#0D0D14", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, fontFamily:"'Georgia',serif" }}>
       <div style={{ width:380, padding:"2.5rem", background:"#16161F", border:"1px solid #2A2A3A", borderRadius:16 }}>
         <div style={{ textAlign:"center", marginBottom:"2rem" }}>
           <h1 style={{ margin:0, fontSize:30, fontWeight:700, color:"#F5E6C8", letterSpacing:"-0.5px" }}>Movie Monday</h1>
@@ -196,6 +196,9 @@ function AuthScreen({ onLogin }) {
           )}
         </div>
       </div>
+      <p style={{ margin:0, color:"#555577", fontSize:11, textAlign:"center" }}>
+        This product uses the <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer" style={{ color:"#8888AA" }}>TMDB</a> API but is not endorsed or certified by TMDB.
+      </p>
     </div>
   );
 }
@@ -2038,6 +2041,10 @@ export default function App() {
         {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} onToggleGold={handleToggleGoldStar} onToggleStage={handleToggleStage} onRemoveFromTop25={handleRemoveFromTop25} readOnly={demoMode} />}
         {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={demoMode ? "" : user.email} />}
       </main>
+
+      <p style={{ margin:"0 0 1.5rem", color:"#555577", fontSize:11, textAlign:"center" }}>
+        This product uses the <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer" style={{ color:"#8888AA" }}>TMDB</a> API but is not endorsed or certified by TMDB.
+      </p>
 
       {showSearch && (
         <LogMovieSearchModal
