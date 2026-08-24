@@ -212,11 +212,12 @@ function LogMovieModal({ prefill, onSave, onClose }) {
   const [noDate,    setNoDate]    = useState(isEdit && !prefill?.watch_date);
   const [watchDate, setWatchDate] = useState(prefill?.watch_date || new Date().toISOString().split("T")[0]);
   const [saving,    setSaving]    = useState(false);
+  const overview = prefill?.overview || "";
 
   async function save() {
     if (!title.trim()) return;
     setSaving(true);
-    await onSave({ title, year, genre, poster, tmdb_id: tmdbId, notes, watch_date: noDate ? null : watchDate }, prefill?.id);
+    await onSave({ title, year, genre, poster, tmdb_id: tmdbId, notes, watch_date: noDate ? null : watchDate, overview }, prefill?.id);
     setSaving(false);
   }
 
@@ -310,7 +311,8 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose, watchlog }) {
       year:   (m.release_date||"").slice(0,4),
       genre:  GENRE_MAP[m.genre_ids?.[0]] || "",
       poster: m.poster_path ? TMDB_IMG+m.poster_path : "",
-      tmdbId: m.id
+      tmdbId: m.id,
+      overview: m.overview || ""
     };
   }
 
@@ -448,6 +450,7 @@ function ImportCsvModal({ watchlog, userId, onImported, onClose }) {
           genre:      match ? (GENRE_MAP[match.genre_ids?.[0]]||r.genre||"") : r.genre,
           poster:     match && match.poster_path ? TMDB_IMG+match.poster_path : "",
           tmdb_id:    match ? match.id : null,
+          overview:   match ? (match.overview||"") : "",
           notes:      r.notes,
           watch_date: r.watch_date,
           user_id:    userId
@@ -607,7 +610,8 @@ function SearchTab({ onSelectMovie, watchlog }) {
       year:   (m.release_date||"").slice(0,4),
       genre:  m.genres?.[0]?.name || GENRE_MAP[m.genre_ids?.[0]] || "",
       poster: m.poster_path ? TMDB_IMG+m.poster_path : "",
-      tmdbId: m.id
+      tmdbId: m.id,
+      overview: m.overview || ""
     };
   }
 
@@ -742,6 +746,12 @@ function JournalEntry({ m, onDelete, onEdit, onToggleGold, readOnly }) {
           {m.genre && <span style={{ fontSize:11, padding:"2px 8px", borderRadius:20, border:"1px solid #555577", color:"#8888AA" }}>{m.genre}</span>}
           <span style={{ color:"#8888AA", fontSize:12 }}>{m.watch_date || "No date"}</span>
         </div>
+        {m.overview && (
+          <p style={{
+            margin:"6px 0 0", color:"#8888AA", fontSize:13, lineHeight:1.5,
+            display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"
+          }}>{m.overview}</p>
+        )}
         {m.notes && <p style={{ margin:"6px 0 0", color:"#AAAACC", fontSize:14, lineHeight:1.5 }}>{m.notes}</p>}
       </div>
     </div>
@@ -975,6 +985,9 @@ function HofRow({ m, rank, zone, staged, dragId, overId, overPosition, readOnly,
         <div style={{ flex:1, minWidth:0 }}>
           <p style={{ margin:0, color:"#F5E6C8", fontSize:15, fontFamily:"'Georgia',serif", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
           {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
+          {m.overview && (
+            <p style={{ margin:"2px 0 0", color:"#666680", fontSize:12, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.overview}</p>
+          )}
         </div>
         {!readOnly && zone==="top" && (
           <button onClick={()=>onRemoveFromTop25(m)} title={`Remove from Top ${HOF_TOP_N}`}
@@ -1105,7 +1118,8 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
       year:   (m.release_date||"").slice(0,4),
       genre:  m.genres?.[0]?.name || GENRE_MAP[m.genre_ids?.[0]] || "",
       poster: m.poster_path?TMDB_IMG+m.poster_path:"",
-      tmdbId: m.id
+      tmdbId: m.id,
+      overview: m.overview || ""
     };
   }
 
@@ -1599,6 +1613,41 @@ export default function App() {
     if (!error) setWatchlog(data||[]);
     setLoadingLog(false);
   }
+
+  // Backfills the TMDB summary for movies logged before the overview field existed.
+  // Fetched once per movie ever (persisted to the DB), not on every visit — new
+  // entries already capture it at log time via buildPrefill, this only covers the
+  // back-catalog. Skipped entirely in the read-only demo (anon can't write back).
+  const overviewBackfillRef = useRef(new Set());
+  useEffect(() => {
+    if (demoMode) return;
+    const missing = watchlog.filter(m => m.tmdb_id && !m.overview && !overviewBackfillRef.current.has(m.id));
+    if (missing.length===0) return;
+    missing.forEach(m=>overviewBackfillRef.current.add(m.id));
+    let cancelled = false;
+    (async () => {
+      const BATCH = 10;
+      for (let i=0; i<missing.length; i+=BATCH) {
+        if (cancelled) return;
+        const batch = missing.slice(i, i+BATCH);
+        const results = await Promise.all(batch.map(async m => {
+          try {
+            const detail = await tmdb(`/movie/${m.tmdb_id}`, { language:"en-US" });
+            return detail.overview ? { id: m.id, overview: detail.overview } : null;
+          } catch { return null; }
+        }));
+        const found = results.filter(Boolean);
+        if (found.length===0) continue;
+        if (cancelled) return;
+        setWatchlog(prev => prev.map(m => {
+          const hit = found.find(f=>f.id===m.id);
+          return hit ? { ...m, overview: hit.overview } : m;
+        }));
+        await Promise.all(found.map(f => supabase.from("watchlog").update({ overview:f.overview }).eq("id", f.id)));
+      }
+    })();
+    return () => { cancelled = true; };
+  },[watchlog, demoMode]);
 
   async function handleSaveMovie(entry, editId) {
     if (editId) {

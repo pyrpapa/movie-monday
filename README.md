@@ -61,7 +61,7 @@ The login screen can show a "View a read-only demo" link that lets visitors brow
 2. Create a view that hardcodes both the row scope (just that account) and the column list (no `notes`, no raw `user_id`), then grant it to the anonymous role:
    ```sql
    create view demo_watchlog as
-   select id, title, year, genre, poster, tmdb_id, watch_date, gold_rank
+   select id, title, year, genre, poster, tmdb_id, watch_date, gold_rank, overview
    from watchlog
    where user_id = '<the-uuid-from-step-1>';
 
