@@ -732,16 +732,12 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
   const [filter,     setFilter]     = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
   const [sort,       setSort]       = useState("recent");
-  const [expandedYears, setExpandedYears] = useState(() => {
-    if (watchlog.length===0) return new Set();
-    const newest = [...watchlog].sort((a,b)=>new Date(b.watch_date)-new Date(a.watch_date))[0];
-    return new Set([watchYearOf(newest.watch_date)]);
-  });
-  const [expandedMonths, setExpandedMonths] = useState(() => {
-    if (watchlog.length===0) return new Set();
-    const newest = [...watchlog].sort((a,b)=>new Date(b.watch_date)-new Date(a.watch_date))[0];
-    return new Set([monthKeyOf(newest.watch_date)]);
-  });
+  // Tracks which years/months have been explicitly collapsed. Absence from
+  // these sets means expanded, so everything defaults open — including
+  // years/months that don't exist yet at mount time (e.g. while data is
+  // still loading) or get added later via import.
+  const [collapsedYears,  setCollapsedYears]  = useState(() => new Set());
+  const [collapsedMonths, setCollapsedMonths] = useState(() => new Set());
 
   const genres = ["all", ...new Set(watchlog.map(m=>m.genre).filter(Boolean))];
   const years  = ["all", ...new Set(watchlog.map(m=>watchYearOf(m.watch_date)).filter(Boolean))].sort((a,b)=>a==="all"?-1:b==="all"?1:b-a);
@@ -775,30 +771,29 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
   }
 
   function toggleYear(year) {
-    setExpandedYears(prev => {
+    setCollapsedYears(prev => {
       const next = new Set(prev);
       next.has(year) ? next.delete(year) : next.add(year);
       return next;
     });
   }
   function toggleMonth(key) {
-    setExpandedMonths(prev => {
+    setCollapsedMonths(prev => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   }
 
-  const allExpanded = groupByDate && yearGroups.length>0 &&
-    yearGroups.every(yg => expandedYears.has(yg.year) && yg.monthGroups.every(g=>expandedMonths.has(g.key)));
+  const allExpanded = collapsedYears.size===0 && collapsedMonths.size===0;
 
   function toggleExpandAll() {
     if (allExpanded) {
-      setExpandedYears(new Set());
-      setExpandedMonths(new Set());
+      setCollapsedYears(new Set(yearGroups.map(yg=>yg.year)));
+      setCollapsedMonths(new Set(yearGroups.flatMap(yg=>yg.monthGroups.map(g=>g.key))));
     } else {
-      setExpandedYears(new Set(yearGroups.map(yg=>yg.year)));
-      setExpandedMonths(new Set(yearGroups.flatMap(yg=>yg.monthGroups.map(g=>g.key))));
+      setCollapsedYears(new Set());
+      setCollapsedMonths(new Set());
     }
   }
 
@@ -846,7 +841,7 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
       {groupByDate ? (
         <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
           {yearGroups.map(yg=>{
-            const yearOpen = expandedYears.has(yg.year);
+            const yearOpen = !collapsedYears.has(yg.year);
             return (
               <div key={yg.year}>
                 <button onClick={()=>toggleYear(yg.year)} style={{
@@ -861,7 +856,7 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
                 {yearOpen && (
                   <div style={{ display:"flex", flexDirection:"column", gap:4, margin:"8px 0 14px 22px" }}>
                     {yg.monthGroups.map(g=>{
-                      const isOpen = expandedMonths.has(g.key);
+                      const isOpen = !collapsedMonths.has(g.key);
                       return (
                         <div key={g.key}>
                           <button onClick={()=>toggleMonth(g.key)} style={{
