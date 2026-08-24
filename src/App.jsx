@@ -29,23 +29,6 @@ async function tmdb(path, params = {}) {
 }
 
 // ─── UI Primitives ────────────────────────────────────────────────────────────
-function Stars({ value, onChange, size = 22 }) {
-  const [hover, setHover] = useState(0);
-  return (
-    <span style={{ display:"inline-flex", gap:2, cursor: onChange ? "pointer":"default" }}>
-      {[1,2,3,4,5].map(i => (
-        <span key={i}
-          style={{ fontSize:size, color:(hover||value)>=i?"#E8A838":"#333355", lineHeight:1 }}
-          onMouseEnter={() => onChange && setHover(i)}
-          onMouseLeave={() => onChange && setHover(0)}
-          onClick={() => onChange && onChange(i)}>
-          {(hover||value)>=i ? "★":"☆"}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 function Poster({ src, title, width=52, height=76 }) {
   if (src && src !== "N/A") return <img src={src} alt={title} style={{ width, height, objectFit:"cover", borderRadius:6, flexShrink:0 }} />;
   return <div style={{ width, height, background:"#1A1A28", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>🎬</div>;
@@ -123,7 +106,6 @@ function LogMovieModal({ prefill, onSave, onClose }) {
   const [genre,     setGenre]     = useState(prefill?.genre      || "");
   const [poster,    setPoster]    = useState(prefill?.poster     || "");
   const [tmdbId,    setTmdbId]    = useState(prefill?.tmdb_id    || prefill?.tmdbId || null);
-  const [rating,    setRating]    = useState(prefill?.rating     || 0);
   const [notes,     setNotes]     = useState(prefill?.notes      || "");
   const [watchDate, setWatchDate] = useState(prefill?.watch_date || new Date().toISOString().split("T")[0]);
   const [saving,    setSaving]    = useState(false);
@@ -131,7 +113,7 @@ function LogMovieModal({ prefill, onSave, onClose }) {
   async function save() {
     if (!title.trim()) return;
     setSaving(true);
-    await onSave({ title, year, genre, poster, tmdb_id: tmdbId, rating, notes, watch_date: watchDate }, prefill?.id);
+    await onSave({ title, year, genre, poster, tmdb_id: tmdbId, notes, watch_date: watchDate }, prefill?.id);
     setSaving(false);
   }
 
@@ -157,10 +139,6 @@ function LogMovieModal({ prefill, onSave, onClose }) {
               </select>
             </div>
           </div>
-        </div>
-        <div style={{ marginBottom:"1rem" }}>
-          <label style={{ fontSize:13, color:"#8888AA", display:"block", marginBottom:6 }}>Your Rating</label>
-          <Stars value={rating} onChange={setRating} size={28} />
         </div>
         <div style={{ marginBottom:"1rem" }}>
           <label style={{ fontSize:13, color:"#8888AA", display:"block", marginBottom:6 }}>Date Watched</label>
@@ -470,7 +448,6 @@ function JournalEntry({ m, onDelete, onEdit, onToggleGold }) {
           </div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
-          <Stars value={m.rating} size={14} />
           {m.year  && <span style={{ color:"#8888AA", fontSize:13 }}>{m.year}</span>}
           {m.genre && <span style={{ fontSize:11, padding:"2px 8px", borderRadius:20, border:"1px solid #555577", color:"#8888AA" }}>{m.genre}</span>}
           <span style={{ color:"#8888AA", fontSize:12 }}>{m.watch_date}</span>
@@ -504,7 +481,6 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
   );
   filtered = [...filtered].sort((a,b)=>{
     if (sort==="recent") return new Date(b.watch_date)-new Date(a.watch_date);
-    if (sort==="rating") return b.rating-a.rating;
     return a.title.localeCompare(b.title);
   });
 
@@ -562,7 +538,6 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
           </select>
           <select value={sort} onChange={e=>setSort(e.target.value)} style={sel}>
             <option value="recent">Most Recent</option>
-            <option value="rating">Highest Rated</option>
             <option value="alpha">A–Z</option>
           </select>
         </div>
@@ -927,7 +902,6 @@ function BarChart({ data }) {
                     <Poster src={m.poster} title={m.title} width={24} height={35} />
                     <span style={{ color:"#F5E6C8", fontSize:13 }}>{m.title}</span>
                     {m.year && <span style={{ color:"#8888AA", fontSize:12 }}>({m.year})</span>}
-                    <Stars value={m.rating} size={11} />
                   </div>
                 ))}
               </div>
@@ -1046,8 +1020,7 @@ function ReportTab({ watchlog, userEmail }) {
   );
 
   const total       = watchlog.length;
-  const rated       = watchlog.filter(m=>m.rating>0);
-  const avgRating   = rated.length?(rated.reduce((a,b)=>a+b.rating,0)/rated.length).toFixed(1):"—";
+  const goldCount   = watchlog.filter(m=>m.gold_rank!=null).length;
   const genreCounts = watchlog.reduce((acc,m)=>{ if(m.genre) acc[m.genre]=(acc[m.genre]||0)+1; return acc; },{});
   const genreData   = Object.entries(genreCounts).map(([label,value])=>({ label, value })).sort((a,b)=>b.value-a.value);
   const topGenre    = Object.entries(genreCounts).sort((a,b)=>b[1]-a[1])[0];
@@ -1069,16 +1042,16 @@ th{font-weight:600;color:#555}.stats{display:flex;gap:2rem;margin:1rem 0}
 <h2>Overview</h2>
 <div class="stats">
   <div><div class="stat-n">${total}</div><div class="stat-l">Movies Logged</div></div>
-  <div><div class="stat-n">${avgRating}</div><div class="stat-l">Avg Rating</div></div>
+  <div><div class="stat-n">${goldCount}</div><div class="stat-l">Hall of Fame</div></div>
   ${topGenre?`<div><div class="stat-n">${topGenre[0]}</div><div class="stat-l">Top Genre (${topGenre[1]})</div></div>`:""}
 </div>
 <h2>Top Rated</h2>
-<table><tr><th>#</th><th>Title</th><th>Year</th><th>Genre</th><th>Rating</th><th>Notes</th></tr>
-${top5.map((m,i)=>`<tr><td>${i+1}</td><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||"—"}</td><td>${"★".repeat(m.rating)}${"☆".repeat(5-m.rating)}</td><td>${m.notes||"—"}</td></tr>`).join("")}
+<table><tr><th>#</th><th>Title</th><th>Year</th><th>Genre</th><th>Notes</th></tr>
+${top5.map((m,i)=>`<tr><td>${i+1}</td><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||"—"}</td><td>${m.notes||"—"}</td></tr>`).join("")}
 </table>
 <h2>Full Watch History</h2>
-<table><tr><th>Title</th><th>Year</th><th>Genre</th><th>Rating</th><th>Watched</th><th>Notes</th></tr>
-${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||"—"}</td><td>${"★".repeat(m.rating)}${"☆".repeat(5-m.rating)}</td><td>${m.watch_date}</td><td>${m.notes||"—"}</td></tr>`).join("")}
+<table><tr><th>Title</th><th>Year</th><th>Genre</th><th>Watched</th><th>Notes</th></tr>
+${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||"—"}</td><td>${m.watch_date}</td><td>${m.notes||"—"}</td></tr>`).join("")}
 </table></body></html>`);
     win.document.close(); win.print();
   }
@@ -1095,7 +1068,7 @@ ${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:12, marginBottom:"1.5rem" }}>
         <div style={statBox}><div style={{ fontSize:28, fontWeight:700, color:"#E8A838" }}>{total}</div><div style={{ color:"#8888AA", fontSize:13, marginTop:2 }}>Movies Logged</div></div>
-        <div style={statBox}><div style={{ fontSize:28, fontWeight:700, color:"#E8A838" }}>{avgRating}</div><div style={{ color:"#8888AA", fontSize:13, marginTop:2 }}>Avg Rating</div></div>
+        <div style={statBox}><div style={{ fontSize:28, fontWeight:700, color:"#E8A838" }}>{goldCount}</div><div style={{ color:"#8888AA", fontSize:13, marginTop:2 }}>Hall of Fame</div></div>
         {topGenre&&<div style={statBox}><div style={{ fontSize:20, fontWeight:700, color:"#E8A838" }}>{topGenre[0]}</div><div style={{ color:"#8888AA", fontSize:13, marginTop:2 }}>Top Genre</div></div>}
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:"1.5rem" }}>
@@ -1108,7 +1081,7 @@ ${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||
                 <span style={{ color:"#E8A838", fontWeight:700, width:18, flexShrink:0 }}>{i+1}</span>
                 <div style={{ flex:1, minWidth:0 }}>
                   <p style={{ margin:0, color:"#F5E6C8", fontSize:14, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
-                  <Stars value={m.rating} size={12} />
+                  {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
                 </div>
               </div>
             ))}
