@@ -942,25 +942,101 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
 }
 
 // ─── Hall of Fame Tab ────────────────────────────────────────────────────────
+const HOF_TOP_N = 25;
+
+function HofRow({ m, rank, dragId, overId, overPosition, readOnly, onToggleGold, onRowDragStart, onRowDragOver, onRowDragEnd, onRowDrop }) {
+  const showLine = !readOnly && dragId!=null && dragId!==m.id && overId===m.id;
+  return (
+    <div style={{ position:"relative" }}>
+      {showLine && overPosition==="above" && (
+        <div style={{ position:"absolute", top:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
+      )}
+      <div
+        draggable={!readOnly}
+        onDragStart={()=>onRowDragStart(m.id)}
+        onDragOver={e=>{
+          if (readOnly) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const rect = e.currentTarget.getBoundingClientRect();
+          onRowDragOver(m.id, e.clientY < rect.top+rect.height/2 ? "above" : "below");
+        }}
+        onDragEnd={onRowDragEnd}
+        onDrop={readOnly ? undefined : e=>{ e.stopPropagation(); onRowDrop(m.id); }}
+        style={{
+          display:"flex", alignItems:"center", gap:12, background:"#16161F",
+          border:"1px solid #2A2A3A", borderRadius:10,
+          padding:"10px 14px", cursor: readOnly ? "default" : "grab", opacity: dragId===m.id?0.4:1
+        }}>
+        {rank!=null && <span style={{ color:"#E8A838", fontWeight:700, width:22, textAlign:"center", fontSize:15, fontFamily:"'Georgia',serif" }}>{rank}</span>}
+        <Poster src={m.poster} title={m.title} width={40} height={58} />
+        <div style={{ flex:1, minWidth:0 }}>
+          <p style={{ margin:0, color:"#F5E6C8", fontSize:15, fontFamily:"'Georgia',serif", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
+          {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
+        </div>
+        {!readOnly && (
+          <>
+            <button onClick={()=>onToggleGold(m)} title="Remove from Hall of Fame"
+              style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, padding:0, lineHeight:1, color:"#E8A838", flexShrink:0 }}>
+              ⭐
+            </button>
+            <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>
+          </>
+        )}
+      </div>
+      {showLine && overPosition==="below" && (
+        <div style={{ position:"absolute", bottom:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
+      )}
+    </div>
+  );
+}
+
 function GoldStarTab({ watchlog, onReorder, onToggleGold, readOnly }) {
-  const goldMovies = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank);
-  const [dragIdx,      setDragIdx]      = useState(null);
-  const [overIdx,      setOverIdx]      = useState(null);
+  const goldMovies  = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank);
+  const topMovies   = goldMovies.slice(0, HOF_TOP_N);
+  const restMovies  = [...goldMovies.slice(HOF_TOP_N)].sort((a,b)=>a.title.localeCompare(b.title));
+
+  const [dragId,       setDragId]       = useState(null);
+  const [overId,       setOverId]       = useState(null);
   const [overPosition, setOverPosition] = useState(null); // "above" | "below"
+  const [overRestZone, setOverRestZone] = useState(false); // hovering empty space in the "rest" list
 
-  function reset() { setDragIdx(null); setOverIdx(null); setOverPosition(null); }
+  function reset() { setDragId(null); setOverId(null); setOverPosition(null); setOverRestZone(false); }
 
-  function handleDrop() {
-    if (dragIdx===null || overIdx===null) { reset(); return; }
-    let insertAt = overPosition==="below" ? overIdx+1 : overIdx;
-    if (insertAt > dragIdx) insertAt -= 1; // account for the shift once the dragged item is removed
-    if (insertAt === dragIdx) { reset(); return; }
-    const reordered = [...goldMovies];
-    const [moved] = reordered.splice(dragIdx,1);
-    reordered.splice(insertAt,0,moved);
-    onReorder(reordered.map(m=>m.id));
+  function dropRelativeTo(targetId, position) {
+    if (dragId==null || dragId===targetId) { reset(); return; }
+    const order = goldMovies.filter(m=>m.id!==dragId);
+    const draggedMovie = goldMovies.find(m=>m.id===dragId);
+    const targetIdx = order.findIndex(m=>m.id===targetId);
+    if (targetIdx===-1) { reset(); return; }
+    let insertAt = position==="below" ? targetIdx+1 : targetIdx;
+    // Dropping right at the top/rest boundary is ambiguous by raw index alone (removing the
+    // dragged item shifts everything after it), so pin the result to the zone the target row
+    // is actually in — landing on a "rest" row always ends up in rest, landing on a "top" row
+    // always ends up in top, regardless of which side of the boundary the raw index landed on.
+    if (restMovies.some(m=>m.id===targetId)) insertAt = Math.max(insertAt, HOF_TOP_N);
+    if (topMovies.some(m=>m.id===targetId))  insertAt = Math.min(insertAt, HOF_TOP_N-1);
+    order.splice(insertAt, 0, draggedMovie);
+    onReorder(order.map(m=>m.id));
     reset();
   }
+
+  function dropIntoRestZone() {
+    if (dragId==null) { reset(); return; }
+    const order = goldMovies.filter(m=>m.id!==dragId);
+    const draggedMovie = goldMovies.find(m=>m.id===dragId);
+    order.splice(Math.min(HOF_TOP_N, order.length), 0, draggedMovie);
+    onReorder(order.map(m=>m.id));
+    reset();
+  }
+
+  const rowProps = {
+    dragId, overId, overPosition, readOnly, onToggleGold,
+    onRowDragStart: setDragId,
+    onRowDragOver: (id, pos) => { setOverId(id); setOverPosition(pos); },
+    onRowDragEnd: reset,
+    onRowDrop: (id) => dropRelativeTo(id, overPosition),
+  };
 
   if (goldMovies.length===0) return (
     <div style={{ textAlign:"center", padding:"3rem", color:"#8888AA" }}>
@@ -970,59 +1046,35 @@ function GoldStarTab({ watchlog, onReorder, onToggleGold, readOnly }) {
   );
 
   return (
-    <div style={{ maxWidth:640, margin:"0 auto" }}>
+    <div style={{ maxWidth:900, margin:"0 auto" }}>
       <h2 style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", marginTop:0, marginBottom:4 }}>⭐ Hall of Fame</h2>
       <p style={{ color:"#8888AA", fontSize:14, marginTop:0, marginBottom:"1.25rem" }}>
-        {readOnly ? "Ranked #1 to last, favorite first." : "Drag to reorder — #1 is your favorite."}
+        {readOnly ? "Ranked #1 to last, favorite first." : `Drag to reorder — #1 is your favorite. Only the top ${HOF_TOP_N} are ranked.`}
       </p>
+
+      <h3 style={{ color:"#F5E6C8", fontSize:14, fontFamily:"'Georgia',serif", margin:"0 0 10px" }}>Top {HOF_TOP_N}</h3>
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-        {goldMovies.map((m,i)=>{
-          const showLine = !readOnly && dragIdx!==null && dragIdx!==i && overIdx===i;
-          return (
-            <div key={m.id} style={{ position:"relative" }}>
-              {showLine && overPosition==="above" && (
-                <div style={{ position:"absolute", top:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
-              )}
-              <div
-                draggable={!readOnly}
-                onDragStart={()=>!readOnly && setDragIdx(i)}
-                onDragOver={e=>{
-                  if (readOnly) return;
-                  e.preventDefault();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setOverIdx(i);
-                  setOverPosition(e.clientY < rect.top+rect.height/2 ? "above" : "below");
-                }}
-                onDragEnd={reset}
-                onDrop={readOnly ? undefined : handleDrop}
-                style={{
-                  display:"flex", alignItems:"center", gap:12, background:"#16161F",
-                  border:"1px solid #2A2A3A", borderRadius:10,
-                  padding:"10px 14px", cursor: readOnly ? "default" : "grab", opacity: dragIdx===i?0.4:1
-                }}>
-                <span style={{ color:"#E8A838", fontWeight:700, width:22, textAlign:"center", fontSize:15, fontFamily:"'Georgia',serif" }}>{i+1}</span>
-                <Poster src={m.poster} title={m.title} width={40} height={58} />
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ margin:0, color:"#F5E6C8", fontSize:15, fontFamily:"'Georgia',serif", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
-                  {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
-                </div>
-                {!readOnly && (
-                  <>
-                    <button onClick={()=>onToggleGold(m)} title="Remove from Hall of Fame"
-                      style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, padding:0, lineHeight:1, color:"#E8A838", flexShrink:0 }}>
-                      ⭐
-                    </button>
-                    <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>
-                  </>
-                )}
-              </div>
-              {showLine && overPosition==="below" && (
-                <div style={{ position:"absolute", bottom:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
-              )}
-            </div>
-          );
-        })}
+        {topMovies.map((m,i)=><HofRow key={m.id} m={m} rank={i+1} {...rowProps} />)}
       </div>
+
+      {goldMovies.length>HOF_TOP_N && (
+        <>
+          <h3 style={{ color:"#F5E6C8", fontSize:14, fontFamily:"'Georgia',serif", margin:"1.75rem 0 4px" }}>Also in Hall of Fame</h3>
+          <p style={{ color:"#555577", fontSize:12, margin:"0 0 10px" }}>
+            {readOnly ? "Not in the ranked top." : `Drag one up into Top ${HOF_TOP_N} to rank it, or drag a top ${HOF_TOP_N} pick down here.`}
+          </p>
+          <div
+            onDragOver={e=>{ if (readOnly) return; e.preventDefault(); setOverRestZone(true); }}
+            onDragLeave={()=>setOverRestZone(false)}
+            onDrop={readOnly ? undefined : dropIntoRestZone}
+            style={{
+              display:"flex", flexDirection:"column", gap:8,
+              outline: overRestZone ? "2px dashed #E8A838" : "none", outlineOffset:4, borderRadius:10
+            }}>
+            {restMovies.map(m=><HofRow key={m.id} m={m} rank={null} {...rowProps} />)}
+          </div>
+        </>
+      )}
     </div>
   );
 }
