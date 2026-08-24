@@ -11,6 +11,8 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
+const DEMO_USER_ID = import.meta.env.VITE_DEMO_USER_ID;
+
 const GENRE_MAP = {
   28:"Action",12:"Adventure",16:"Animation",35:"Comedy",80:"Crime",
   99:"Documentary",18:"Drama",10751:"Family",14:"Fantasy",36:"History",
@@ -185,6 +187,11 @@ function AuthScreen({ onLogin }) {
           <button onClick={submit} disabled={loading} style={{ padding:"11px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, fontSize:15, cursor:"pointer", fontFamily:"inherit" }}>
             {loading?"…":mode==="login"?"Sign In":"Create Account"}
           </button>
+          {DEMO_USER_ID && (
+            <a href="?demo=1" style={{ textAlign:"center", color:"#8888AA", fontSize:13, textDecoration:"underline" }}>
+              👀 View a read-only demo
+            </a>
+          )}
         </div>
       </div>
     </div>
@@ -700,7 +707,7 @@ function monthLabelOf(dateStr) {
   return `${MONTH_NAMES[Number(mo)-1]} ${y}`;
 }
 
-function JournalEntry({ m, onDelete, onEdit, onToggleGold }) {
+function JournalEntry({ m, onDelete, onEdit, onToggleGold, readOnly }) {
   const isGold = m.gold_rank!=null;
   return (
     <div style={{ display:"flex", gap:14, background:"#16161F", border:`1px solid ${isGold?"#E8A838":"#2A2A3A"}`, borderRadius:12, padding:"12px 16px", alignItems:"flex-start" }}>
@@ -708,14 +715,18 @@ function JournalEntry({ m, onDelete, onEdit, onToggleGold }) {
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
           <h3 style={{ margin:0, color:"#F5E6C8", fontSize:16, fontFamily:"'Georgia',serif" }}>{m.title}</h3>
-          <div style={{ display:"flex", gap:8, flexShrink:0, alignItems:"center" }}>
-            <button onClick={()=>onToggleGold(m)} title={isGold?"Remove from Hall of Fame":"Add to Hall of Fame"}
-              style={{ background:"none", border:"none", cursor:"pointer", fontSize:15, padding:0, lineHeight:1, color: isGold?"#E8A838":"#555577" }}>
-              {isGold?"⭐":"☆"}
-            </button>
-            <button onClick={()=>onEdit(m)} title="Edit" style={{ background:"none", border:"none", color:"#8888AA", cursor:"pointer", fontSize:14, padding:0, lineHeight:1 }}>✏️</button>
-            <button onClick={()=>onDelete(m.id)} title="Remove" style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>×</button>
-          </div>
+          {readOnly ? (
+            isGold && <span style={{ color:"#E8A838", fontSize:15 }}>⭐</span>
+          ) : (
+            <div style={{ display:"flex", gap:8, flexShrink:0, alignItems:"center" }}>
+              <button onClick={()=>onToggleGold(m)} title={isGold?"Remove from Hall of Fame":"Add to Hall of Fame"}
+                style={{ background:"none", border:"none", cursor:"pointer", fontSize:15, padding:0, lineHeight:1, color: isGold?"#E8A838":"#555577" }}>
+                {isGold?"⭐":"☆"}
+              </button>
+              <button onClick={()=>onEdit(m)} title="Edit" style={{ background:"none", border:"none", color:"#8888AA", cursor:"pointer", fontSize:14, padding:0, lineHeight:1 }}>✏️</button>
+              <button onClick={()=>onDelete(m.id)} title="Remove" style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>×</button>
+            </div>
+          )}
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
           {m.year  && <span style={{ color:"#8888AA", fontSize:13 }}>{m.year}</span>}
@@ -728,7 +739,7 @@ function JournalEntry({ m, onDelete, onEdit, onToggleGold }) {
   );
 }
 
-function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, loading }) {
+function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, loading, readOnly }) {
   const [filter,     setFilter]     = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
   const [sort,       setSort]       = useState("recent");
@@ -823,9 +834,11 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
               {allExpanded ? "▾ Collapse All" : "▸ Expand All"}
             </button>
           )}
-          <button onClick={onImportClick} style={{ padding:"7px 12px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#8888AA", cursor:"pointer", fontFamily:"inherit", fontSize:13 }}>
-            ⬆ Import CSV
-          </button>
+          {!readOnly && (
+            <button onClick={onImportClick} style={{ padding:"7px 12px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#8888AA", cursor:"pointer", fontFamily:"inherit", fontSize:13 }}>
+              ⬆ Import CSV
+            </button>
+          )}
         </div>
       </div>
 
@@ -833,7 +846,7 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
         <div style={{ textAlign:"center", padding:"3rem", color:"#8888AA" }}>
           <div style={{ fontSize:40, marginBottom:12 }}>🍿</div>
           <p>{watchlog.length===0
-            ? <>No movies logged yet. Search for one or use <strong style={{ color:"#F5E6C8" }}>+ Log Movie</strong> to get started!</>
+            ? (readOnly ? "This demo account has no movies logged yet." : <>No movies logged yet. Search for one or use <strong style={{ color:"#F5E6C8" }}>+ Log Movie</strong> to get started!</>)
             : "No movies match these filters."}</p>
         </div>
       )}
@@ -870,7 +883,7 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
                           </button>
                           {isOpen && (
                             <div style={{ display:"flex", flexDirection:"column", gap:10, margin:"10px 0 16px" }}>
-                              {g.movies.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} onToggleGold={onToggleGold} />)}
+                              {g.movies.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} onToggleGold={onToggleGold} readOnly={readOnly} />)}
                             </div>
                           )}
                         </div>
@@ -884,7 +897,7 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
         </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-          {filtered.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} onToggleGold={onToggleGold} />)}
+          {filtered.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} onToggleGold={onToggleGold} readOnly={readOnly} />)}
         </div>
       )}
     </div>
@@ -892,7 +905,7 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
 }
 
 // ─── Hall of Fame Tab ────────────────────────────────────────────────────────
-function GoldStarTab({ watchlog, onReorder, onToggleGold }) {
+function GoldStarTab({ watchlog, onReorder, onToggleGold, readOnly }) {
   const goldMovies = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank);
   const [dragIdx,      setDragIdx]      = useState(null);
   const [overIdx,      setOverIdx]      = useState(null);
@@ -915,37 +928,40 @@ function GoldStarTab({ watchlog, onReorder, onToggleGold }) {
   if (goldMovies.length===0) return (
     <div style={{ textAlign:"center", padding:"3rem", color:"#8888AA" }}>
       <div style={{ fontSize:40, marginBottom:12 }}>⭐</div>
-      <p>No Hall of Fame picks yet. Tap the ☆ on any Journal entry to add it here, then drag to rank it.</p>
+      <p>No Hall of Fame picks yet.{!readOnly && " Tap the ☆ on any Journal entry to add it here, then drag to rank it."}</p>
     </div>
   );
 
   return (
     <div style={{ maxWidth:640, margin:"0 auto" }}>
       <h2 style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", marginTop:0, marginBottom:4 }}>⭐ Hall of Fame</h2>
-      <p style={{ color:"#8888AA", fontSize:14, marginTop:0, marginBottom:"1.25rem" }}>Drag to reorder — #1 is your favorite.</p>
+      <p style={{ color:"#8888AA", fontSize:14, marginTop:0, marginBottom:"1.25rem" }}>
+        {readOnly ? "Ranked #1 to last, favorite first." : "Drag to reorder — #1 is your favorite."}
+      </p>
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
         {goldMovies.map((m,i)=>{
-          const showLine = dragIdx!==null && dragIdx!==i && overIdx===i;
+          const showLine = !readOnly && dragIdx!==null && dragIdx!==i && overIdx===i;
           return (
             <div key={m.id} style={{ position:"relative" }}>
               {showLine && overPosition==="above" && (
                 <div style={{ position:"absolute", top:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
               )}
               <div
-                draggable
-                onDragStart={()=>setDragIdx(i)}
+                draggable={!readOnly}
+                onDragStart={()=>!readOnly && setDragIdx(i)}
                 onDragOver={e=>{
+                  if (readOnly) return;
                   e.preventDefault();
                   const rect = e.currentTarget.getBoundingClientRect();
                   setOverIdx(i);
                   setOverPosition(e.clientY < rect.top+rect.height/2 ? "above" : "below");
                 }}
                 onDragEnd={reset}
-                onDrop={handleDrop}
+                onDrop={readOnly ? undefined : handleDrop}
                 style={{
                   display:"flex", alignItems:"center", gap:12, background:"#16161F",
                   border:"1px solid #2A2A3A", borderRadius:10,
-                  padding:"10px 14px", cursor:"grab", opacity: dragIdx===i?0.4:1
+                  padding:"10px 14px", cursor: readOnly ? "default" : "grab", opacity: dragIdx===i?0.4:1
                 }}>
                 <span style={{ color:"#E8A838", fontWeight:700, width:22, textAlign:"center", fontSize:15, fontFamily:"'Georgia',serif" }}>{i+1}</span>
                 <Poster src={m.poster} title={m.title} width={40} height={58} />
@@ -953,11 +969,15 @@ function GoldStarTab({ watchlog, onReorder, onToggleGold }) {
                   <p style={{ margin:0, color:"#F5E6C8", fontSize:15, fontFamily:"'Georgia',serif", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
                   {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
                 </div>
-                <button onClick={()=>onToggleGold(m)} title="Remove from Hall of Fame"
-                  style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, padding:0, lineHeight:1, color:"#E8A838", flexShrink:0 }}>
-                  ⭐
-                </button>
-                <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>
+                {!readOnly && (
+                  <>
+                    <button onClick={()=>onToggleGold(m)} title="Remove from Hall of Fame"
+                      style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, padding:0, lineHeight:1, color:"#E8A838", flexShrink:0 }}>
+                      ⭐
+                    </button>
+                    <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>
+                  </>
+                )}
               </div>
               {showLine && overPosition==="below" && (
                 <div style={{ position:"absolute", bottom:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
@@ -1450,6 +1470,7 @@ ${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||
 
 // ─── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  const [demoMode]   = useState(() => new URLSearchParams(window.location.search).get("demo")==="1");
   const [user,       setUser]       = useState(null);
   const [watchlog,   setWatchlog]   = useState([]);
   const [tab,        setTab]        = useState("journal");
@@ -1462,6 +1483,7 @@ export default function App() {
 
   // Listen for auth state changes
   useEffect(()=>{
+    if (demoMode) { setAuthReady(true); return; }
     supabase.auth.getSession().then(({ data:{ session }})=>{
       setUser(session?.user ?? null);
       setAuthReady(true);
@@ -1470,13 +1492,21 @@ export default function App() {
       setUser(session?.user ?? null);
     });
     return () => subscription.unsubscribe();
-  },[]);
+  },[demoMode]);
 
-  // Load watchlog when user is set
+  // Load watchlog when user is set, or the fixed demo account's data in demo mode
   useEffect(()=>{
-    if (user) fetchWatchlog();
-    else setWatchlog([]);
-  },[user]);
+    if (demoMode) {
+      if (!DEMO_USER_ID) return;
+      setLoadingLog(true);
+      supabase.from("watchlog").select("*").eq("user_id", DEMO_USER_ID).order("watch_date", { ascending:false })
+        .then(({ data, error })=>{ if (!error) setWatchlog(data||[]); setLoadingLog(false); });
+    } else if (user) {
+      fetchWatchlog();
+    } else {
+      setWatchlog([]);
+    }
+  },[user, demoMode]);
 
   async function fetchWatchlog() {
     setLoadingLog(true);
@@ -1573,16 +1603,24 @@ export default function App() {
     setTab("journal");
   }
 
-  if (!authReady) return <Spinner />;
-  if (!user) return <AuthScreen onLogin={setUser} />;
+  if (!demoMode) {
+    if (!authReady) return <Spinner />;
+    if (!user) return <AuthScreen onLogin={setUser} />;
+  }
 
-  const TABS = [
-    { id:"journal",     label:"Journal"  },
-    { id:"search",      label:"Search"   },
-    { id:"suggestions", label:"For You"  },
-    { id:"goldstar",    label:"Hall of Fame"  },
-    { id:"report",      label:"Report"   },
-  ];
+  const TABS = demoMode
+    ? [
+        { id:"journal",  label:"Journal"      },
+        { id:"goldstar", label:"Hall of Fame" },
+        { id:"report",   label:"Report"       },
+      ]
+    : [
+        { id:"journal",     label:"Journal"      },
+        { id:"search",      label:"Search"       },
+        { id:"suggestions", label:"For You"      },
+        { id:"goldstar",    label:"Hall of Fame" },
+        { id:"report",      label:"Report"       },
+      ];
 
   return (
     <div style={{ minHeight:"100vh", background:"#0D0D14", color:"#F5E6C8", fontFamily:"'Georgia',serif" }}>
@@ -1600,21 +1638,32 @@ export default function App() {
               }}>{t.label}</button>
             ))}
           </nav>
-          <button onClick={()=>setShowSearch(true)} style={{ padding:"7px 14px", background:"#1E1E2F", border:"1px solid #3A3A5A", borderRadius:8, color:"#E8A838", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600 }}>
-            + Log Movie
-          </button>
-          <button onClick={handleLogout} style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:12, fontFamily:"inherit" }} title="Sign out">
-            {user.email?.split("@")[0]} ↩
-          </button>
+          {demoMode ? (
+            <>
+              <span style={{ color:"#8888AA", fontSize:12 }}>👀 Read-only demo</span>
+              <a href="." style={{ padding:"7px 14px", background:"#1E1E2F", border:"1px solid #3A3A5A", borderRadius:8, color:"#E8A838", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600, textDecoration:"none" }}>
+                Sign In
+              </a>
+            </>
+          ) : (
+            <>
+              <button onClick={()=>setShowSearch(true)} style={{ padding:"7px 14px", background:"#1E1E2F", border:"1px solid #3A3A5A", borderRadius:8, color:"#E8A838", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600 }}>
+                + Log Movie
+              </button>
+              <button onClick={handleLogout} style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:12, fontFamily:"inherit" }} title="Sign out">
+                {user.email?.split("@")[0]} ↩
+              </button>
+            </>
+          )}
         </div>
       </header>
 
       <main style={{ maxWidth:800, margin:"0 auto", padding:"2rem 24px" }}>
-        {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} onImportClick={()=>setShowImport(true)} loading={loadingLog} />}
-        {tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} watchlog={watchlog} />}
-        {tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
-        {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} onToggleGold={handleToggleGoldStar} />}
-        {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={user.email} />}
+        {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} onImportClick={()=>setShowImport(true)} loading={loadingLog} readOnly={demoMode} />}
+        {!demoMode && tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} watchlog={watchlog} />}
+        {!demoMode && tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
+        {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} onToggleGold={handleToggleGoldStar} readOnly={demoMode} />}
+        {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={demoMode ? "" : user.email} />}
       </main>
 
       {showSearch && (

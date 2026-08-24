@@ -32,6 +32,7 @@ jobs:
           VITE_TMDB_TOKEN: ${{ secrets.VITE_TMDB_TOKEN }}
           VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_DEMO_USER_ID: ${{ secrets.VITE_DEMO_USER_ID }}
 
       - uses: actions/configure-pages@v5
 

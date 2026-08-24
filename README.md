@@ -52,3 +52,19 @@ One-time setup (repo owner only):
 3. In your Supabase project (**Authentication → URL Configuration**), add `https://pyrpapa.github.io/movie-monday/` as a Redirect URL so email confirmation links work from the live site.
 
 Because this is a static site, the TMDB token and Supabase anon key are visible in the built JS bundle — normal for a client-only app like this. Keep the Supabase table's Row Level Security policies scoped to `auth.uid()` so users can only see their own entries.
+
+## Public read-only demo (optional)
+
+The login screen can show a "View a read-only demo" link that lets visitors browse one account's Journal, Hall of Fame, and Report — no sign-in required, and with no edit/delete/import controls available. To enable it:
+
+1. Find your Supabase `auth.users` id (SQL Editor): `select id from auth.users where email = 'you@example.com';`
+2. Add an RLS policy allowing anonymous read access to just that account's rows:
+   ```sql
+   create policy "Public read access to demo account"
+   on watchlog for select
+   to anon
+   using (user_id = '<the-uuid-from-step-1>');
+   ```
+3. Add that same UUID as a repo secret named `VITE_DEMO_USER_ID` (**Settings → Secrets and variables → Actions**).
+
+The demo link only appears on the login screen once `VITE_DEMO_USER_ID` is set. Visiting `?demo=1` loads that account's data read-only via the anon key and the policy above — no other accounts' data is exposed.
