@@ -207,13 +207,14 @@ function LogMovieModal({ prefill, onSave, onClose }) {
   const [poster,    setPoster]    = useState(prefill?.poster     || "");
   const [tmdbId,    setTmdbId]    = useState(prefill?.tmdb_id    || prefill?.tmdbId || null);
   const [notes,     setNotes]     = useState(prefill?.notes      || "");
+  const [noDate,    setNoDate]    = useState(isEdit && !prefill?.watch_date);
   const [watchDate, setWatchDate] = useState(prefill?.watch_date || new Date().toISOString().split("T")[0]);
   const [saving,    setSaving]    = useState(false);
 
   async function save() {
     if (!title.trim()) return;
     setSaving(true);
-    await onSave({ title, year, genre, poster, tmdb_id: tmdbId, notes, watch_date: watchDate }, prefill?.id);
+    await onSave({ title, year, genre, poster, tmdb_id: tmdbId, notes, watch_date: noDate ? null : watchDate }, prefill?.id);
     setSaving(false);
   }
 
@@ -241,8 +242,14 @@ function LogMovieModal({ prefill, onSave, onClose }) {
           </div>
         </div>
         <div style={{ marginBottom:"1rem" }}>
-          <label style={{ fontSize:13, color:"#8888AA", display:"block", marginBottom:6 }}>Date Watched</label>
-          <input type="date" value={watchDate} onChange={e=>setWatchDate(e.target.value)} style={inp} />
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+            <label style={{ fontSize:13, color:"#8888AA" }}>Date Watched</label>
+            <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"#8888AA", cursor:"pointer" }}>
+              <input type="checkbox" checked={noDate} onChange={e=>setNoDate(e.target.checked)} />
+              No date
+            </label>
+          </div>
+          {!noDate && <input type="date" value={watchDate} onChange={e=>setWatchDate(e.target.value)} style={inp} />}
         </div>
         <div style={{ marginBottom:"1.25rem" }}>
           <label style={{ fontSize:13, color:"#8888AA", display:"block", marginBottom:6 }}>Notes / Comments</label>
@@ -731,7 +738,7 @@ function JournalEntry({ m, onDelete, onEdit, onToggleGold, readOnly }) {
         <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
           {m.year  && <span style={{ color:"#8888AA", fontSize:13 }}>{m.year}</span>}
           {m.genre && <span style={{ fontSize:11, padding:"2px 8px", borderRadius:20, border:"1px solid #555577", color:"#8888AA" }}>{m.genre}</span>}
-          <span style={{ color:"#8888AA", fontSize:12 }}>{m.watch_date}</span>
+          <span style={{ color:"#8888AA", fontSize:12 }}>{m.watch_date || "No date"}</span>
         </div>
         {m.notes && <p style={{ margin:"6px 0 0", color:"#AAAACC", fontSize:14, lineHeight:1.5 }}>{m.notes}</p>}
       </div>
@@ -757,16 +764,24 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
     (filter==="all"||m.genre===filter) && (yearFilter==="all"||watchYearOf(m.watch_date)===yearFilter)
   );
   filtered = [...filtered].sort((a,b)=>{
-    if (sort==="recent") return new Date(b.watch_date)-new Date(a.watch_date);
+    if (sort==="recent") {
+      if (!a.watch_date && !b.watch_date) return 0;
+      if (!a.watch_date) return 1;
+      if (!b.watch_date) return -1;
+      return new Date(b.watch_date)-new Date(a.watch_date);
+    }
     return a.title.localeCompare(b.title);
   });
 
+  const UNDATED_KEY = "__no_date__";
   const groupByDate = sort==="recent";
   const yearGroups = [];
+  const undatedMovies = [];
   if (groupByDate) {
     const byYear = new Map();
     filtered.forEach(m=>{
-      const y = watchYearOf(m.watch_date) || "Undated";
+      if (!m.watch_date) { undatedMovies.push(m); return; }
+      const y = watchYearOf(m.watch_date);
       if (!byYear.has(y)) byYear.set(y, []);
       byYear.get(y).push(m);
     });
@@ -800,7 +815,7 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
 
   function toggleExpandAll() {
     if (allExpanded) {
-      setCollapsedYears(new Set(yearGroups.map(yg=>yg.year)));
+      setCollapsedYears(new Set([...yearGroups.map(yg=>yg.year), UNDATED_KEY]));
       setCollapsedMonths(new Set(yearGroups.flatMap(yg=>yg.monthGroups.map(g=>g.key))));
     } else {
       setCollapsedYears(new Set());
@@ -894,6 +909,28 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
               </div>
             );
           })}
+
+          {undatedMovies.length>0 && (() => {
+            const undatedOpen = !collapsedYears.has(UNDATED_KEY);
+            return (
+              <div>
+                <button onClick={()=>toggleYear(UNDATED_KEY)} style={{
+                  display:"flex", alignItems:"center", gap:10, width:"100%",
+                  background:"none", border:"none", borderBottom:"1px solid #3A3A5A",
+                  padding:"10px 4px", cursor:"pointer", textAlign:"left", fontFamily:"inherit"
+                }}>
+                  <span style={{ color:"#E8A838", fontSize:12 }}>{undatedOpen?"▾":"▸"}</span>
+                  <span style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", fontSize:19, fontWeight:700, letterSpacing:"0.5px" }}>No Date</span>
+                  <span style={{ color:"#8888AA", fontSize:13 }}>({undatedMovies.length})</span>
+                </button>
+                {undatedOpen && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:10, margin:"10px 0 16px" }}>
+                    {undatedMovies.map(m=><JournalEntry key={m.id} m={m} onDelete={onDelete} onEdit={onEdit} onToggleGold={onToggleGold} readOnly={readOnly} />)}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
@@ -1358,7 +1395,7 @@ ${top5.map((m,i)=>`<tr><td>${i+1}</td><td>${m.title}</td><td>${m.year||"—"}</t
 </table>
 <h2>Full Watch History</h2>
 <table><tr><th>Title</th><th>Year</th><th>Genre</th><th>Watched</th><th>Notes</th></tr>
-${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||"—"}</td><td>${m.watch_date}</td><td>${m.notes||"—"}</td></tr>`).join("")}
+${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||"—"}</td><td>${m.watch_date||"—"}</td><td>${m.notes||"—"}</td></tr>`).join("")}
 </table></body></html>`);
     win.document.close(); win.print();
   }
@@ -1398,7 +1435,7 @@ ${sorted.map(m=>`<tr><td>${m.title}</td><td>${m.year||"—"}</td><td>${m.genre||
           {recent5.map(m=>(
             <div key={m.id} style={{ paddingBottom:8, marginBottom:8, borderBottom:"1px solid #2A2A3A" }}>
               <p style={{ margin:0, color:"#F5E6C8", fontSize:14, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
-              <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.watch_date}</p>
+              <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.watch_date || "No date"}</p>
             </div>
           ))}
         </div>
