@@ -7,7 +7,8 @@ A personal movie journal web app to track every film you watch.
 
 ## What it does
 - Search for movies by title, actor, or director
-- Log movies with your rating, notes, and date watched
+- Log movies with your notes and date watched
+- Keep a separate watchlist ("The List") for movies to watch someday, and move them into your Journal once you actually watch one
 - Get suggestions based on your watch history
 - View stats and reports on your movie habits
 - Secure login — your journal is private to your account
@@ -70,3 +71,64 @@ The login screen can show a "View a read-only demo" link that lets visitors brow
 3. Add a repo secret named `VITE_DEMO_ENABLED` with the value `true` (**Settings → Secrets and variables → Actions**).
 
 The demo link only appears once `VITE_DEMO_ENABLED` is `true`. Visiting `?demo=1` reads from `demo_watchlog` via the anon key — the view itself is what scopes access to one account and strips notes, so the client never even requests (or could request) more than that.
+
+## Database schema (Supabase)
+
+The app expects two tables under Row Level Security scoped to `auth.uid()`:
+
+```sql
+-- watchlog: movies you've actually watched
+create table watchlog (
+  id bigint generated always as identity primary key,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  title text not null,
+  year text,
+  genre text,
+  poster text,
+  tmdb_id bigint,
+  overview text,
+  notes text,
+  watch_date date,
+  gold_rank integer,
+  hof_staged boolean default false,
+  created_at timestamptz not null default now()
+);
+
+-- watchlist: "The List" — movies you want to watch someday
+create table watchlist (
+  id bigint generated always as identity primary key,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  title text not null,
+  year text,
+  genre text,
+  poster text,
+  tmdb_id bigint,
+  overview text,
+  created_at timestamptz not null default now()
+);
+
+alter table watchlog enable row level security;
+alter table watchlist enable row level security;
+
+create policy "select own watchlog" on watchlog for select using (auth.uid() = user_id);
+create policy "insert own watchlog" on watchlog for insert with check (auth.uid() = user_id);
+create policy "update own watchlog" on watchlog for update using (auth.uid() = user_id);
+create policy "delete own watchlog" on watchlog for delete using (auth.uid() = user_id);
+
+create policy "select own watchlist" on watchlist for select using (auth.uid() = user_id);
+create policy "insert own watchlist" on watchlist for insert with check (auth.uid() = user_id);
+create policy "update own watchlist" on watchlist for update using (auth.uid() = user_id);
+create policy "delete own watchlist" on watchlist for delete using (auth.uid() = user_id);
+```
+
+If you're adding `watchlist` to an existing project (rather than starting fresh), just run the `create table watchlist`, `alter table ... enable row level security`, and the four `watchlist` policies — `watchlog` already exists.
+
+If the public demo is enabled, also extend it to cover The List:
+```sql
+create view demo_watchlist as
+select id, title, year, genre, poster, tmdb_id, overview, created_at
+from watchlist
+where user_id = '<your-uuid-from-earlier>';
+
+grant select on demo_watchlist to anon;
+```

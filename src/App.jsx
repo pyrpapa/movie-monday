@@ -201,8 +201,8 @@ function AuthScreen({ onLogin }) {
 }
 
 // ─── Log Movie Modal ──────────────────────────────────────────────────────────
-function LogMovieModal({ prefill, onSave, onClose }) {
-  const isEdit = Boolean(prefill?.id);
+function LogMovieModal({ prefill, onSave, onClose, mode="journal" }) {
+  const isEdit = Boolean(prefill?.id) && mode==="journal";
   const [title,     setTitle]     = useState(prefill?.title      || "");
   const [year,      setYear]      = useState(prefill?.year       || "");
   const [genre,     setGenre]     = useState(prefill?.genre      || "");
@@ -217,7 +217,10 @@ function LogMovieModal({ prefill, onSave, onClose }) {
   async function save() {
     if (!title.trim()) return;
     setSaving(true);
-    await onSave({ title, year, genre, poster, tmdb_id: tmdbId, notes, watch_date: noDate ? null : watchDate, overview }, prefill?.id);
+    const entry = mode==="journal"
+      ? { title, year, genre, poster, tmdb_id: tmdbId, notes, watch_date: noDate ? null : watchDate, overview }
+      : { title, year, genre, poster, tmdb_id: tmdbId, overview };
+    await onSave(entry, prefill?.id);
     setSaving(false);
   }
 
@@ -228,7 +231,7 @@ function LogMovieModal({ prefill, onSave, onClose }) {
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
       <div style={{ width:"100%", maxWidth:480, background:"#16161F", border:"1px solid #2A2A3A", borderRadius:16, padding:"1.5rem" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1.25rem" }}>
-          <h2 style={{ margin:0, color:"#F5E6C8", fontSize:20 }}>{isEdit ? "Edit Entry" : "Log a Movie"}</h2>
+          <h2 style={{ margin:0, color:"#F5E6C8", fontSize:20 }}>{mode==="list" ? "Add to The List" : isEdit ? "Edit Entry" : "Log a Movie"}</h2>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#8888AA", fontSize:22, cursor:"pointer" }}>×</button>
         </div>
         <div style={{ display:"flex", gap:12, marginBottom:"1rem" }}>
@@ -244,25 +247,29 @@ function LogMovieModal({ prefill, onSave, onClose }) {
             </div>
           </div>
         </div>
-        <div style={{ marginBottom:"1rem" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-            <label style={{ fontSize:13, color:"#8888AA" }}>Date Watched</label>
-            <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"#8888AA", cursor:"pointer" }}>
-              <input type="checkbox" checked={noDate} onChange={e=>setNoDate(e.target.checked)} />
-              No date
-            </label>
-          </div>
-          {!noDate && <input type="date" value={watchDate} onChange={e=>setWatchDate(e.target.value)} style={inp} />}
-        </div>
-        <div style={{ marginBottom:"1.25rem" }}>
-          <label style={{ fontSize:13, color:"#8888AA", display:"block", marginBottom:6 }}>Notes / Comments</label>
-          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What did you think?" rows={3}
-            style={{ ...inp, resize:"vertical", lineHeight:1.5 }} />
-        </div>
-        <div style={{ display:"flex", gap:10 }}>
+        {mode==="journal" && (
+          <>
+            <div style={{ marginBottom:"1rem" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <label style={{ fontSize:13, color:"#8888AA" }}>Date Watched</label>
+                <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"#8888AA", cursor:"pointer" }}>
+                  <input type="checkbox" checked={noDate} onChange={e=>setNoDate(e.target.checked)} />
+                  No date
+                </label>
+              </div>
+              {!noDate && <input type="date" value={watchDate} onChange={e=>setWatchDate(e.target.value)} style={inp} />}
+            </div>
+            <div style={{ marginBottom:"1.25rem" }}>
+              <label style={{ fontSize:13, color:"#8888AA", display:"block", marginBottom:6 }}>Notes / Comments</label>
+              <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What did you think?" rows={3}
+                style={{ ...inp, resize:"vertical", lineHeight:1.5 }} />
+            </div>
+          </>
+        )}
+        <div style={{ display:"flex", gap:10, marginTop: mode==="list" ? "1.25rem" : 0 }}>
           <button onClick={onClose} style={{ flex:1, padding:"10px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#8888AA", cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
           <button onClick={save} disabled={saving} style={{ flex:2, padding:"10px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-            {saving ? "Saving…" : isEdit ? "Save Changes" : "Save to Journal"}
+            {saving ? "Saving…" : mode==="list" ? "Add to List" : isEdit ? "Save Changes" : "Save to Journal"}
           </button>
         </div>
       </div>
@@ -271,8 +278,14 @@ function LogMovieModal({ prefill, onSave, onClose }) {
 }
 
 // ─── Log Movie Search Modal ─────────────────────────────────────────────────
-function LogMovieSearchModal({ onSelectMovie, onManual, onClose, watchlog }) {
+// mode="log" (default): clicking a card hands off to onSelectMovie (opens the
+// full Log Movie modal); if onAddToList is also passed, each card gets a small
+// secondary button to add straight to The List instead.
+// mode="list": clicking a card calls onSelectMovie directly to add it to The
+// List — no intermediate modal, since a want-to-watch entry needs no date/notes.
+function LogMovieSearchModal({ onSelectMovie, onManual, onClose, watchlog, watchlist, onAddToList, mode="log" }) {
   const watchedSet = buildWatchedSet(watchlog);
+  const listedSet  = buildWatchedSet(watchlist||[]);
   const [query,        setQuery]        = useState("");
   const [results,      setResults]      = useState([]);
   const [person,       setPerson]       = useState(null);
@@ -318,11 +331,43 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose, watchlog }) {
 
   const inp = { padding:"10px 14px", background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:8, color:"#F5E6C8", fontSize:15, outline:"none", fontFamily:"inherit" };
 
+  function renderCard(m) {
+    const alreadyListed = isWatched(m, listedSet);
+    return (
+      <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
+        style={{ position:"relative", background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+        onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
+        onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
+        {isWatched(m, watchedSet) && <WatchedBadge />}
+        {m.poster_path
+          ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
+          : <div style={{ aspectRatio:"2/3", background:"#1A1A28", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>🎬</div>}
+        <div style={{ padding:"6px 8px" }}>
+          <p style={{ margin:0, color:"#F5E6C8", fontSize:12, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
+          <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:11 }}>{(m.release_date||"").slice(0,4)}</p>
+        </div>
+        {mode==="log" && onAddToList && (
+          <button
+            onClick={e=>{ e.stopPropagation(); if (!alreadyListed) onAddToList(buildPrefill(m)); }}
+            title={alreadyListed ? "Already on The List" : "Add to The List"}
+            disabled={alreadyListed}
+            style={{
+              position:"absolute", bottom:6, right:6, background: alreadyListed?"#2A2A3A":"#0D0D14",
+              border:"1px solid #A78BFA", color:"#A78BFA", borderRadius:20, fontSize:10, fontWeight:700,
+              padding:"3px 8px", cursor: alreadyListed?"default":"pointer"
+            }}>
+            {alreadyListed ? "On List" : "+ List"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
       <div style={{ width:"100%", maxWidth:560, maxHeight:"85vh", overflowY:"auto", background:"#16161F", border:"1px solid #2A2A3A", borderRadius:16, padding:"1.5rem" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1rem" }}>
-          <h2 style={{ margin:0, color:"#F5E6C8", fontSize:20 }}>Log a Movie</h2>
+          <h2 style={{ margin:0, color:"#F5E6C8", fontSize:20 }}>{mode==="list" ? "Add to The List" : "Log a Movie"}</h2>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#8888AA", fontSize:22, cursor:"pointer" }}>×</button>
         </div>
         <div style={{ display:"flex", gap:8, marginBottom:"1rem" }}>
@@ -342,21 +387,7 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose, watchlog }) {
               <h3 style={{ margin:0, color:"#F5E6C8", fontSize:14 }}>🎭 Movies with {person.name}</h3>
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(110px,1fr))", gap:10 }}>
-              {personMovies.map(m=>(
-                <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
-                  style={{ position:"relative", background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
-                  onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
-                  onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
-                  {isWatched(m, watchedSet) && <WatchedBadge />}
-                  {m.poster_path
-                    ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
-                    : <div style={{ aspectRatio:"2/3", background:"#1A1A28", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>🎬</div>}
-                  <div style={{ padding:"6px 8px" }}>
-                    <p style={{ margin:0, color:"#F5E6C8", fontSize:12, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
-                    <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:11 }}>{(m.release_date||"").slice(0,4)}</p>
-                  </div>
-                </div>
-              ))}
+              {personMovies.map(renderCard)}
             </div>
           </div>
         )}
@@ -365,21 +396,7 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose, watchlog }) {
           <div style={{ marginBottom:"1rem" }}>
             {person && <h3 style={{ margin:"0 0 8px", color:"#F5E6C8", fontSize:14 }}>Matching Titles</h3>}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(110px,1fr))", gap:10 }}>
-              {results.map(m=>(
-                <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
-                  style={{ position:"relative", background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
-                  onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
-                  onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
-                  {isWatched(m, watchedSet) && <WatchedBadge />}
-                  {m.poster_path
-                    ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
-                    : <div style={{ aspectRatio:"2/3", background:"#1A1A28", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>🎬</div>}
-                  <div style={{ padding:"6px 8px" }}>
-                    <p style={{ margin:0, color:"#F5E6C8", fontSize:12, fontWeight:500, lineHeight:1.3 }}>{m.title}</p>
-                    <p style={{ margin:"2px 0 0", color:"#8888AA", fontSize:11 }}>{(m.release_date||"").slice(0,4)}</p>
-                  </div>
-                </div>
-              ))}
+              {results.map(renderCard)}
             </div>
           </div>
         )}
@@ -562,8 +579,9 @@ function ImportCsvModal({ watchlog, userId, onImported, onClose }) {
 }
 
 // ─── Search Tab ───────────────────────────────────────────────────────────────
-function SearchTab({ onSelectMovie, watchlog }) {
+function SearchTab({ onSelectMovie, watchlog, watchlist, onAddToList }) {
   const watchedSet = buildWatchedSet(watchlog);
+  const listedSet  = buildWatchedSet(watchlist||[]);
   const [query,        setQuery]        = useState("");
   const [results,      setResults]      = useState([]);
   const [person,       setPerson]       = useState(null);
@@ -648,10 +666,19 @@ function SearchTab({ onSelectMovie, watchlog }) {
               )}
             </div>
             <p style={{ margin:"0 0 12px", color:"#AAAACC", fontSize:14, lineHeight:1.6 }}>{selected.overview}</p>
-            <button onClick={()=>onSelectMovie(buildPrefill(selected))}
-              style={{ padding:"8px 18px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-              + Log this movie
-            </button>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={()=>onSelectMovie(buildPrefill(selected))}
+                style={{ padding:"8px 18px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                + Log this movie
+              </button>
+              {onAddToList && (
+                <button onClick={()=>!isWatched(selected, listedSet) && onAddToList(buildPrefill(selected))}
+                  disabled={isWatched(selected, listedSet)}
+                  style={{ padding:"8px 18px", background:"none", border:"1px solid #A78BFA", borderRadius:8, color:"#A78BFA", fontWeight:700, cursor: isWatched(selected, listedSet)?"default":"pointer", fontFamily:"inherit" }}>
+                  {isWatched(selected, listedSet) ? "✓ On The List" : "+ Add to The List"}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1089,8 +1116,66 @@ function GoldStarTab({ watchlog, onReorder, onToggleGold, onToggleStage, onRemov
   );
 }
 
+// ─── The List Tab ─────────────────────────────────────────────────────────────
+function WatchlistTab({ watchlist, onRemove, onMoveToJournal, onAddClick, readOnly }) {
+  if (watchlist.length===0) return (
+    <div style={{ textAlign:"center", padding:"3rem", color:"#8888AA" }}>
+      <div style={{ fontSize:40, marginBottom:12 }}>📋</div>
+      <p>Nothing on The List yet.{!readOnly && " Search for a movie and add it here to prep something for a future Movie Monday."}</p>
+    </div>
+  );
+
+  const sorted = [...watchlist].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1.25rem" }}>
+        <h2 style={{ color:"#F5E6C8", fontFamily:"'Georgia',serif", margin:0 }}>
+          📋 The List <span style={{ color:"#8888AA", fontWeight:400, fontSize:16 }}>({watchlist.length})</span>
+        </h2>
+        {!readOnly && (
+          <button onClick={onAddClick} style={{ padding:"7px 14px", background:"#1E1E2F", border:"1px solid #A78BFA", borderRadius:8, color:"#A78BFA", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600 }}>
+            + Add Movie
+          </button>
+        )}
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {sorted.map(m=>(
+          <div key={m.id} style={{ display:"flex", gap:14, background:"#16161F", border:"1px solid #2A2A3A", borderRadius:12, padding:"12px 16px", alignItems:"flex-start" }}>
+            <Poster src={m.poster} title={m.title} />
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
+                <h3 style={{ margin:0, color:"#F5E6C8", fontSize:16, fontFamily:"'Georgia',serif" }}>{m.title}</h3>
+                {!readOnly && (
+                  <button onClick={()=>onRemove(m.id)} title="Remove from The List" style={{ background:"none", border:"none", color:"#555577", cursor:"pointer", fontSize:18, padding:0, lineHeight:1, flexShrink:0 }}>×</button>
+                )}
+              </div>
+              <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
+                {m.year  && <span style={{ color:"#8888AA", fontSize:13 }}>{m.year}</span>}
+                {m.genre && <span style={{ fontSize:11, padding:"2px 8px", borderRadius:20, border:"1px solid #555577", color:"#8888AA" }}>{m.genre}</span>}
+              </div>
+              {m.overview && (
+                <p style={{
+                  margin:"6px 0 0", color:"#8888AA", fontSize:13, lineHeight:1.5,
+                  display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"
+                }}>{m.overview}</p>
+              )}
+              {!readOnly && (
+                <button onClick={()=>onMoveToJournal(m)} style={{ marginTop:8, padding:"6px 12px", background:"none", border:"1px solid #E8A838", borderRadius:8, color:"#E8A838", cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:600 }}>
+                  ▶ Watched it — log to Journal
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Suggestions Tab ──────────────────────────────────────────────────────────
-function SuggestionsTab({ watchlog, onSelectMovie }) {
+function SuggestionsTab({ watchlog, onSelectMovie, watchlist, onAddToList }) {
+  const listedSet = buildWatchedSet(watchlist||[]);
   const [mode,        setMode]        = useState("criteria"); // "criteria" | "similar"
   const [genreId,     setGenreId]     = useState("");
   const [personQuery, setPersonQuery] = useState("");
@@ -1268,10 +1353,19 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
               )}
             </div>
             <p style={{ margin:"0 0 12px", color:"#AAAACC", fontSize:14, lineHeight:1.6 }}>{selected.overview}</p>
-            <button onClick={()=>onSelectMovie(buildPrefill(selected))}
-              style={{ padding:"8px 18px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-              + Log this movie
-            </button>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={()=>onSelectMovie(buildPrefill(selected))}
+                style={{ padding:"8px 18px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                + Log this movie
+              </button>
+              {onAddToList && (
+                <button onClick={()=>!isWatched(selected, listedSet) && onAddToList(buildPrefill(selected))}
+                  disabled={isWatched(selected, listedSet)}
+                  style={{ padding:"8px 18px", background:"none", border:"1px solid #A78BFA", borderRadius:8, color:"#A78BFA", fontWeight:700, cursor: isWatched(selected, listedSet)?"default":"pointer", fontFamily:"inherit" }}>
+                  {isWatched(selected, listedSet) ? "✓ On The List" : "+ Add to The List"}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1599,10 +1693,13 @@ export default function App() {
   const [demoMode]   = useState(() => new URLSearchParams(window.location.search).get("demo")==="1");
   const [user,       setUser]       = useState(null);
   const [watchlog,   setWatchlog]   = useState([]);
+  const [watchlist,  setWatchlist]  = useState([]);
   const [tab,        setTab]        = useState("journal");
   const [showLog,    setShowLog]    = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showListSearch, setShowListSearch] = useState(false);
+  const [showListManual, setShowListManual] = useState(false);
   const [logPrefill, setLogPrefill] = useState(null);
   const [loadingLog, setLoadingLog] = useState(false);
   const [authReady,  setAuthReady]  = useState(false);
@@ -1646,6 +1743,20 @@ export default function App() {
     if (!error) setWatchlog(data||[]);
     setLoadingLog(false);
   }
+
+  // Load The List (want-to-watch), same real-vs-demo split as watchlog
+  useEffect(()=>{
+    if (demoMode) {
+      if (!DEMO_ENABLED) return;
+      supabase.from("demo_watchlist").select("*").order("created_at", { ascending:false })
+        .then(({ data, error })=>{ if (!error) setWatchlist(data||[]); });
+    } else if (user) {
+      supabase.from("watchlist").select("*").order("created_at", { ascending:false })
+        .then(({ data, error })=>{ if (!error) setWatchlist(data||[]); });
+    } else {
+      setWatchlist([]);
+    }
+  },[user, demoMode]);
 
   // Backfills the TMDB summary for movies logged before the overview field existed.
   // Fetched once per movie ever (persisted to the DB), not on every visit — new
@@ -1707,6 +1818,10 @@ export default function App() {
         .single();
       if (!error) {
         setWatchlog(prev=>[data, ...prev]);
+        if (logPrefill?.fromListId) {
+          await supabase.from("watchlist").delete().eq("id", logPrefill.fromListId);
+          setWatchlist(prev=>prev.filter(w=>w.id!==logPrefill.fromListId));
+        }
         setShowLog(false);
         setLogPrefill(null);
         setTab("journal");
@@ -1724,6 +1839,37 @@ export default function App() {
   async function handleDelete(id) {
     await supabase.from("watchlog").delete().eq("id", id);
     setWatchlog(prev=>prev.filter(m=>m.id!==id));
+  }
+
+  async function handleAddToList(prefill) {
+    const key = prefill.tmdbId || prefill.tmdb_id ? String(prefill.tmdbId || prefill.tmdb_id) : null;
+    const alreadyOnList = watchlist.some(w => (key && String(w.tmdb_id)===key) || w.title.toLowerCase()===prefill.title.toLowerCase());
+    if (alreadyOnList) return;
+    const entry = {
+      title:    prefill.title,
+      year:     prefill.year || "",
+      genre:    prefill.genre || "",
+      poster:   prefill.poster || "",
+      tmdb_id:  prefill.tmdbId || prefill.tmdb_id || null,
+      overview: prefill.overview || "",
+      user_id:  user.id
+    };
+    const { data, error } = await supabase.from("watchlist").insert([entry]).select().single();
+    if (!error) setWatchlist(prev=>[data, ...prev]);
+    else alert("Error adding to list: " + error.message);
+  }
+
+  async function handleRemoveFromList(id) {
+    await supabase.from("watchlist").delete().eq("id", id);
+    setWatchlist(prev=>prev.filter(w=>w.id!==id));
+  }
+
+  function handleMoveToJournal(item) {
+    setLogPrefill({
+      title: item.title, year: item.year, genre: item.genre, poster: item.poster,
+      tmdb_id: item.tmdb_id, overview: item.overview, fromListId: item.id
+    });
+    setShowLog(true);
   }
 
   async function handleToggleGoldStar(movie) {
@@ -1808,11 +1954,13 @@ export default function App() {
   const TABS = demoMode
     ? [
         { id:"journal",  label:"Journal"      },
+        { id:"list",     label:"The List"     },
         { id:"goldstar", label:"Hall of Fame" },
         { id:"report",   label:"Report"       },
       ]
     : [
         { id:"journal",     label:"Journal"      },
+        { id:"list",        label:"The List"     },
         { id:"search",      label:"Search"       },
         { id:"suggestions", label:"For You"      },
         { id:"goldstar",    label:"Hall of Fame" },
@@ -1878,8 +2026,9 @@ export default function App() {
 
       <main style={{ maxWidth:1100, margin:"0 auto", padding:"2rem 24px" }}>
         {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} onImportClick={()=>setShowImport(true)} loading={loadingLog} readOnly={demoMode} />}
-        {!demoMode && tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} watchlog={watchlog} />}
-        {!demoMode && tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
+        {tab==="list"        && <WatchlistTab   watchlist={watchlist} onRemove={handleRemoveFromList} onMoveToJournal={handleMoveToJournal} onAddClick={()=>setShowListSearch(true)} readOnly={demoMode} />}
+        {!demoMode && tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} watchlog={watchlog} watchlist={watchlist} onAddToList={handleAddToList} />}
+        {!demoMode && tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} watchlist={watchlist} onAddToList={handleAddToList} />}
         {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} onToggleGold={handleToggleGoldStar} onToggleStage={handleToggleStage} onRemoveFromTop25={handleRemoveFromTop25} readOnly={demoMode} />}
         {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={demoMode ? "" : user.email} />}
       </main>
@@ -1890,6 +2039,8 @@ export default function App() {
           onManual={()=>{ setShowSearch(false); setLogPrefill(null); setShowLog(true); }}
           onClose={()=>setShowSearch(false)}
           watchlog={watchlog}
+          watchlist={watchlist}
+          onAddToList={(prefill)=>{ handleAddToList(prefill); }}
         />
       )}
 
@@ -1907,6 +2058,26 @@ export default function App() {
           prefill={logPrefill}
           onSave={handleSaveMovie}
           onClose={()=>{ setShowLog(false); setLogPrefill(null); }}
+        />
+      )}
+
+      {showListSearch && (
+        <LogMovieSearchModal
+          mode="list"
+          onSelectMovie={(prefill)=>{ handleAddToList(prefill); setShowListSearch(false); }}
+          onManual={()=>{ setShowListSearch(false); setShowListManual(true); }}
+          onClose={()=>setShowListSearch(false)}
+          watchlog={watchlog}
+          watchlist={watchlist}
+        />
+      )}
+
+      {showListManual && (
+        <LogMovieModal
+          mode="list"
+          prefill={null}
+          onSave={(entry)=>{ handleAddToList(entry); setShowListManual(false); }}
+          onClose={()=>setShowListManual(false)}
         />
       )}
     </div>
