@@ -28,6 +28,24 @@ async function tmdb(path, params = {}) {
   return res.json();
 }
 
+// ─── Already-Watched Helpers ──────────────────────────────────────────────────
+function buildWatchedSet(watchlog) {
+  return {
+    ids:    new Set(watchlog.filter(w=>w.tmdb_id).map(w=>String(w.tmdb_id))),
+    titles: new Set(watchlog.map(w=>(w.title||"").toLowerCase()))
+  };
+}
+function isWatched(m, watchedSet) {
+  return watchedSet.ids.has(String(m.id)) || watchedSet.titles.has((m.title||m.name||"").toLowerCase());
+}
+function WatchedBadge() {
+  return (
+    <div style={{ position:"absolute", top:6, right:6, background:"#0D0D14", color:"#E8A838", fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:20, border:"1px solid #E8A838", letterSpacing:"0.3px" }}>
+      ✓ Watched
+    </div>
+  );
+}
+
 // ─── CSV Import Helpers ───────────────────────────────────────────────────────
 function parseCSV(text) {
   const rows = [];
@@ -236,7 +254,8 @@ function LogMovieModal({ prefill, onSave, onClose }) {
 }
 
 // ─── Log Movie Search Modal ─────────────────────────────────────────────────
-function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
+function LogMovieSearchModal({ onSelectMovie, onManual, onClose, watchlog }) {
+  const watchedSet = buildWatchedSet(watchlog);
   const [query,        setQuery]        = useState("");
   const [results,      setResults]      = useState([]);
   const [person,       setPerson]       = useState(null);
@@ -307,9 +326,10 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(110px,1fr))", gap:10 }}>
               {personMovies.map(m=>(
                 <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
-                  style={{ background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+                  style={{ position:"relative", background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
                   onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
                   onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
+                  {isWatched(m, watchedSet) && <WatchedBadge />}
                   {m.poster_path
                     ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
                     : <div style={{ aspectRatio:"2/3", background:"#1A1A28", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>🎬</div>}
@@ -329,9 +349,10 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(110px,1fr))", gap:10 }}>
               {results.map(m=>(
                 <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
-                  style={{ background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+                  style={{ position:"relative", background:"#0D0D14", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
                   onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
                   onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
+                  {isWatched(m, watchedSet) && <WatchedBadge />}
                   {m.poster_path
                     ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
                     : <div style={{ aspectRatio:"2/3", background:"#1A1A28", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>🎬</div>}
@@ -522,7 +543,8 @@ function ImportCsvModal({ watchlog, userId, onImported, onClose }) {
 }
 
 // ─── Search Tab ───────────────────────────────────────────────────────────────
-function SearchTab({ onSelectMovie }) {
+function SearchTab({ onSelectMovie, watchlog }) {
+  const watchedSet = buildWatchedSet(watchlog);
   const [query,        setQuery]        = useState("");
   const [results,      setResults]      = useState([]);
   const [person,       setPerson]       = useState(null);
@@ -601,6 +623,9 @@ function SearchTab({ onSelectMovie }) {
               {selected.vote_average>0 && (
                 <span style={{ fontSize:11, padding:"2px 8px", borderRadius:20, border:"1px solid #E8A838", color:"#E8A838" }}>★ {selected.vote_average.toFixed(1)}</span>
               )}
+              {isWatched(selected, watchedSet) && (
+                <span style={{ fontSize:11, padding:"2px 8px", borderRadius:20, background:"#E8A838", color:"#0D0D14", fontWeight:700 }}>✓ Watched</span>
+              )}
             </div>
             <p style={{ margin:"0 0 12px", color:"#AAAACC", fontSize:14, lineHeight:1.6 }}>{selected.overview}</p>
             <button onClick={()=>onSelectMovie(buildPrefill(selected))}
@@ -620,9 +645,10 @@ function SearchTab({ onSelectMovie }) {
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px,1fr))", gap:12 }}>
             {personMovies.map(m=>(
               <div key={m.id} onClick={()=>selectMovie(m)}
-                style={{ background:"#16161F", border:`1px solid ${selected?.id===m.id?"#E8A838":"#2A2A3A"}`, borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+                style={{ position:"relative", background:"#16161F", border:`1px solid ${selected?.id===m.id?"#E8A838":"#2A2A3A"}`, borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
                 onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
                 onMouseLeave={e=>e.currentTarget.style.borderColor=selected?.id===m.id?"#E8A838":"#2A2A3A"}>
+                {isWatched(m, watchedSet) && <WatchedBadge />}
                 {m.poster_path
                   ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
                   : <div style={{ aspectRatio:"2/3", background:"#0D0D14", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>🎬</div>}
@@ -644,9 +670,10 @@ function SearchTab({ onSelectMovie }) {
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px,1fr))", gap:12 }}>
             {results.map(m=>(
               <div key={m.id} onClick={()=>selectMovie(m)}
-                style={{ background:"#16161F", border:`1px solid ${selected?.id===m.id?"#E8A838":"#2A2A3A"}`, borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+                style={{ position:"relative", background:"#16161F", border:`1px solid ${selected?.id===m.id?"#E8A838":"#2A2A3A"}`, borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
                 onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
                 onMouseLeave={e=>e.currentTarget.style.borderColor=selected?.id===m.id?"#E8A838":"#2A2A3A"}>
+                {isWatched(m, watchedSet) && <WatchedBadge />}
                 {m.poster_path
                   ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
                   : <div style={{ aspectRatio:"2/3", background:"#0D0D14", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>🎬</div>}
@@ -1589,7 +1616,7 @@ export default function App() {
 
       <main style={{ maxWidth:800, margin:"0 auto", padding:"2rem 24px" }}>
         {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} onImportClick={()=>setShowImport(true)} loading={loadingLog} />}
-        {tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} />}
+        {tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} watchlog={watchlog} />}
         {tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
         {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} onToggleGold={handleToggleGoldStar} />}
         {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={user.email} />}
@@ -1600,6 +1627,7 @@ export default function App() {
           onSelectMovie={(prefill)=>{ setShowSearch(false); handleSelectMovie(prefill); }}
           onManual={()=>{ setShowSearch(false); setLogPrefill(null); setShowLog(true); }}
           onClose={()=>setShowSearch(false)}
+          watchlog={watchlog}
         />
       )}
 
