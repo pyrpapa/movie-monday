@@ -133,6 +133,16 @@ function Spinner() {
   return <div style={{ textAlign:"center", padding:"3rem", color:"#8888AA" }}>Loading…</div>;
 }
 
+const TMDB_LOGO = "https://www.themoviedb.org/assets/v4/logos/v2/blue_square_1-5bdc75aaebeb75dc7ae79426ddd9be3b2be1e342510f8202baf6bffa71d7f5c4.svg";
+function TmdbAttribution() {
+  return (
+    <p style={{ margin:0, color:"#555577", fontSize:11, textAlign:"center", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+      <img src={TMDB_LOGO} alt="TMDB" style={{ height:14, width:"auto" }} />
+      This product uses the <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer" style={{ color:"#8888AA" }}>TMDB</a> API but is not endorsed or certified by TMDB.
+    </p>
+  );
+}
+
 // ─── Auth Screen ──────────────────────────────────────────────────────────────
 function AuthScreen({ onLogin }) {
   const [mode,     setMode]     = useState("login");
@@ -196,9 +206,7 @@ function AuthScreen({ onLogin }) {
           )}
         </div>
       </div>
-      <p style={{ margin:0, color:"#555577", fontSize:11, textAlign:"center" }}>
-        This product uses the <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer" style={{ color:"#8888AA" }}>TMDB</a> API but is not endorsed or certified by TMDB.
-      </p>
+      <TmdbAttribution />
     </div>
   );
 }
@@ -2033,7 +2041,7 @@ export default function App() {
         </div>
       </header>
 
-      <main style={{ maxWidth:1100, margin:"0 auto", padding:"2rem 24px" }}>
+      <main style={{ maxWidth:1100, margin:"0 auto", padding:"2rem 24px 4rem" }}>
         {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} onImportClick={()=>setShowImport(true)} loading={loadingLog} readOnly={demoMode} />}
         {tab==="list"        && <WatchlistTab   watchlist={watchlist} onRemove={handleRemoveFromList} onMoveToJournal={handleMoveToJournal} onAddClick={()=>setShowListSearch(true)} readOnly={demoMode} />}
         {!demoMode && tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} watchlog={watchlog} watchlist={watchlist} onAddToList={handleAddToList} />}
@@ -2042,9 +2050,9 @@ export default function App() {
         {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={demoMode ? "" : user.email} />}
       </main>
 
-      <p style={{ margin:"0 0 1.5rem", color:"#555577", fontSize:11, textAlign:"center" }}>
-        This product uses the <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer" style={{ color:"#8888AA" }}>TMDB</a> API but is not endorsed or certified by TMDB.
-      </p>
+      <div style={{ position:"fixed", bottom:0, left:0, right:0, background:"#0D0D14", borderTop:"1px solid #2A2A3A", padding:"12px 24px", zIndex:100 }}>
+        <TmdbAttribution />
+      </div>
 
       {showSearch && (
         <LogMovieSearchModal
