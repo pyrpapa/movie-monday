@@ -1251,10 +1251,10 @@ function ReportTab({ watchlog, userEmail }) {
   }, [credits, tmdbIdToEntries]);
 
   const decadeData = useMemo(() => {
-    const counts = {};
-    watchlog.forEach(m => { if (m.year) { const d = Math.floor(Number(m.year)/10)*10; counts[d] = (counts[d]||0)+1; } });
-    return Object.entries(counts)
-      .map(([decade,value])=>({ label:`${decade}s`, value, _decade:Number(decade) }))
+    const byDecade = {};
+    watchlog.forEach(m => { if (m.year) { const d = Math.floor(Number(m.year)/10)*10; (byDecade[d]=byDecade[d]||[]).push(m); } });
+    return Object.entries(byDecade)
+      .map(([decade,movies])=>({ label:`${decade}s`, value:movies.length, movies, _decade:Number(decade) }))
       .sort((a,b)=>a._decade-b._decade);
   }, [watchlog]);
 
@@ -1268,7 +1268,8 @@ function ReportTab({ watchlog, userEmail }) {
   const total       = watchlog.length;
   const goldCount   = watchlog.filter(m=>m.gold_rank!=null).length;
   const genreCounts = watchlog.reduce((acc,m)=>{ if(m.genre) acc[m.genre]=(acc[m.genre]||0)+1; return acc; },{});
-  const genreData   = Object.entries(genreCounts).map(([label,value])=>({ label, value })).sort((a,b)=>b.value-a.value);
+  const genreMovies = watchlog.reduce((acc,m)=>{ if(m.genre) (acc[m.genre]=acc[m.genre]||[]).push(m); return acc; },{});
+  const genreData   = Object.entries(genreCounts).map(([label,value])=>({ label, value, movies:genreMovies[label] })).sort((a,b)=>b.value-a.value);
   const topGenre    = Object.entries(genreCounts).sort((a,b)=>b[1]-a[1])[0];
   const top5        = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank).slice(0,5);
   const recent5     = [...watchlog].sort((a,b)=>new Date(b.watch_date)-new Date(a.watch_date)).slice(0,5);
