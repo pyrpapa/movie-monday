@@ -1480,6 +1480,7 @@ export default function App() {
   const [logPrefill, setLogPrefill] = useState(null);
   const [loadingLog, setLoadingLog] = useState(false);
   const [authReady,  setAuthReady]  = useState(false);
+  const [showDemoInfo, setShowDemoInfo] = useState(false);
 
   // Listen for auth state changes
   useEffect(()=>{
@@ -1627,7 +1628,7 @@ export default function App() {
   return (
     <div style={{ minHeight:"100vh", background:"#0D0D14", color:"#F5E6C8", fontFamily:"'Georgia',serif" }}>
       <header style={{ borderBottom:"1px solid #2A2A3A", padding:"0 24px", position:"sticky", top:0, background:"#0D0D14", zIndex:100 }}>
-        <div style={{ maxWidth:800, margin:"0 auto", display:"flex", alignItems:"center", gap:12, height:56 }}>
+        <div style={{ maxWidth:1100, margin:"0 auto", display:"flex", alignItems:"center", gap:12, height:56 }}>
           <span style={{ fontSize:20, fontWeight:700, letterSpacing:"-0.5px", flex:1 }}>🎬 Movie Monday</span>
           <nav style={{ display:"flex", gap:2 }}>
             {TABS.map(t=>(
@@ -1642,7 +1643,28 @@ export default function App() {
           </nav>
           {demoMode ? (
             <>
-              <span style={{ color:"#8888AA", fontSize:12 }}>👀 Read-only demo</span>
+              <div style={{ position:"relative" }}>
+                <button onClick={()=>setShowDemoInfo(v=>!v)} style={{
+                  display:"flex", alignItems:"center", gap:6, background:"none",
+                  border:"1px solid #A78BFA", borderRadius:20, padding:"5px 12px",
+                  color:"#A78BFA", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit"
+                }}>
+                  <span style={{
+                    width:15, height:15, borderRadius:"50%", border:"1.5px solid #A78BFA",
+                    display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, flexShrink:0
+                  }}>i</span>
+                  Read-only demo
+                </button>
+                {showDemoInfo && (
+                  <div style={{
+                    position:"absolute", top:"calc(100% + 8px)", right:0, width:240, zIndex:200,
+                    background:"#16161F", border:"1px solid #A78BFA", borderRadius:10,
+                    padding:"10px 12px", color:"#AAAACC", fontSize:12, lineHeight:1.5, textAlign:"left"
+                  }}>
+                    You're viewing example data. Nothing here is editable — sign in to start your own journal.
+                  </div>
+                )}
+              </div>
               <a href="." style={{ padding:"7px 14px", background:"#1E1E2F", border:"1px solid #3A3A5A", borderRadius:8, color:"#E8A838", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600, textDecoration:"none" }}>
                 Sign In
               </a>
@@ -1660,7 +1682,7 @@ export default function App() {
         </div>
       </header>
 
-      <main style={{ maxWidth:800, margin:"0 auto", padding:"2rem 24px" }}>
+      <main style={{ maxWidth:1100, margin:"0 auto", padding:"2rem 24px" }}>
         {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} onImportClick={()=>setShowImport(true)} loading={loadingLog} readOnly={demoMode} />}
         {!demoMode && tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} watchlog={watchlog} />}
         {!demoMode && tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
