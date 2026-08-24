@@ -167,9 +167,10 @@ function AuthScreen({ onLogin }) {
       <div style={{ width:380, padding:"2.5rem", background:"#16161F", border:"1px solid #2A2A3A", borderRadius:16 }}>
         <div style={{ textAlign:"center", marginBottom:"2rem" }}>
           <h1 style={{ margin:0, fontSize:30, fontWeight:700, color:"#F5E6C8", letterSpacing:"-0.5px" }}>Movie Monday</h1>
-          <p style={{ margin:"10px 0 0", color:"#E8A838", fontWeight:700, fontSize:15 }}>Mondays suck. Movies help.</p>
-          <p style={{ margin:"4px 0 0", color:"#E8A838", fontWeight:700, fontSize:14 }}>Watch one with the people you love — alternate who gets to pick each week!</p>
-          <p style={{ margin:"10px 0 0", color:"#E8A838", fontWeight:700, fontSize:12 }}>Log every pick and it becomes a time capsule — proof of the tradition you kept.</p>
+          <p style={{ margin:"10px 0 0", color:"#E8A838", fontWeight:700, fontSize:16 }}>Mondays suck. Movies help.</p>
+          <p style={{ margin:"8px 0 0", color:"#F5E6C8", fontWeight:400, fontSize:14, lineHeight:1.5 }}>
+            Watch one with the people you love, alternate who picks, and build a time capsule of the tradition.
+          </p>
         </div>
         <div style={{ display:"flex", marginBottom:"1.5rem", background:"#0D0D14", borderRadius:8, padding:4 }}>
           {["login","register"].map(m => (
