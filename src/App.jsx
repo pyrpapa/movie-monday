@@ -11,7 +11,7 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-const DEMO_USER_ID = import.meta.env.VITE_DEMO_USER_ID;
+const DEMO_ENABLED = import.meta.env.VITE_DEMO_ENABLED === "true";
 
 const GENRE_MAP = {
   28:"Action",12:"Adventure",16:"Animation",35:"Comedy",80:"Crime",
@@ -187,7 +187,7 @@ function AuthScreen({ onLogin }) {
           <button onClick={submit} disabled={loading} style={{ padding:"11px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, fontSize:15, cursor:"pointer", fontFamily:"inherit" }}>
             {loading?"…":mode==="login"?"Sign In":"Create Account"}
           </button>
-          {DEMO_USER_ID && (
+          {DEMO_ENABLED && (
             <a href="?demo=1" style={{ textAlign:"center", color:"#8888AA", fontSize:13, textDecoration:"underline" }}>
               👀 View a read-only demo
             </a>
@@ -1497,9 +1497,11 @@ export default function App() {
   // Load watchlog when user is set, or the fixed demo account's data in demo mode
   useEffect(()=>{
     if (demoMode) {
-      if (!DEMO_USER_ID) return;
+      if (!DEMO_ENABLED) return;
       setLoadingLog(true);
-      supabase.from("watchlog").select("*").eq("user_id", DEMO_USER_ID).order("watch_date", { ascending:false })
+      // demo_watchlog is a DB view that already scopes to one fixed account and
+      // excludes personal notes — no user_id filtering needed client-side.
+      supabase.from("demo_watchlog").select("*").order("watch_date", { ascending:false })
         .then(({ data, error })=>{ if (!error) setWatchlog(data||[]); setLoadingLog(false); });
     } else if (user) {
       fetchWatchlog();
