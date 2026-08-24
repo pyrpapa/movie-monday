@@ -28,6 +28,81 @@ async function tmdb(path, params = {}) {
   return res.json();
 }
 
+// ─── CSV Import Helpers ───────────────────────────────────────────────────────
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i=0; i<text.length; i++) {
+    const c = text[i], next = text[i+1];
+    if (inQuotes) {
+      if (c==='"' && next==='"') { field+='"'; i++; }
+      else if (c==='"') inQuotes = false;
+      else field += c;
+    } else {
+      if (c==='"') inQuotes = true;
+      else if (c===',') { row.push(field); field=""; }
+      else if (c==='\n' || c==='\r') {
+        if (c==='\r' && next==='\n') i++;
+        row.push(field); field="";
+        if (row.length>1 || row[0]!=="") rows.push(row);
+        row=[];
+      } else field += c;
+    }
+  }
+  if (field!=="" || row.length>0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function normalizeImportDate(raw) {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) { const [,mo,d,y]=mdy; return `${y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`; }
+  const dashy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dashy) { const [,mo,d,y]=dashy; return `${y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`; }
+  return null;
+}
+
+const IMPORT_HEADER_ALIASES = {
+  title:      ["title","movie","name"],
+  year:       ["year","release year"],
+  watch_date: ["watch_date","watchdate","date","date watched","watched"],
+  notes:      ["notes","comments","comment","review"],
+  genre:      ["genre"],
+};
+
+function parseImportCSV(text) {
+  const rows = parseCSV(text).filter(r=>r.some(c=>c.trim()!==""));
+  if (rows.length<2) return { error:"That file doesn't look like it has any data rows." };
+  const headerRow = rows[0].map(h=>h.trim().toLowerCase());
+  const colIndex = {};
+  Object.entries(IMPORT_HEADER_ALIASES).forEach(([field, aliases])=>{
+    const idx = headerRow.findIndex(h=>aliases.includes(h));
+    if (idx!==-1) colIndex[field] = idx;
+  });
+  if (colIndex.title===undefined) return { error:'No "title" column found. Expected headers like: title, year, watch_date, notes.' };
+  if (colIndex.watch_date===undefined) return { error:'No "watch_date" column found. Expected headers like: title, year, watch_date, notes.' };
+
+  const valid = [], invalid = [];
+  rows.slice(1).forEach((r,i)=>{
+    const title = (r[colIndex.title]||"").trim();
+    const watchDateRaw = (r[colIndex.watch_date]||"").trim();
+    const watch_date = normalizeImportDate(watchDateRaw);
+    const rowNum = i+2; // account for header row, 1-indexed for humans
+    if (!title) { invalid.push({ rowNum, reason:"Missing title" }); return; }
+    if (!watch_date) { invalid.push({ rowNum, reason:`Unrecognized date "${watchDateRaw}" (use YYYY-MM-DD or MM/DD/YYYY)` }); return; }
+    valid.push({
+      title,
+      year:  colIndex.year!==undefined  ? (r[colIndex.year]||"").trim()  : "",
+      genre: colIndex.genre!==undefined ? (r[colIndex.genre]||"").trim() : "",
+      notes: colIndex.notes!==undefined ? (r[colIndex.notes]||"").trim() : "",
+      watch_date
+    });
+  });
+  return { valid, invalid };
+}
+
 // ─── UI Primitives ────────────────────────────────────────────────────────────
 function Poster({ src, title, width=52, height=76 }) {
   if (src && src !== "N/A") return <img src={src} alt={title} style={{ width, height, objectFit:"cover", borderRadius:6, flexShrink:0 }} />;
@@ -278,6 +353,174 @@ function LogMovieSearchModal({ onSelectMovie, onManual, onClose }) {
   );
 }
 
+// ─── CSV Import Modal ────────────────────────────────────────────────────────
+function ImportCsvModal({ watchlog, userId, onImported, onClose }) {
+  const [step,       setStep]       = useState("upload"); // upload | preview | importing | done
+  const [fileName,   setFileName]   = useState("");
+  const [parsed,     setParsed]     = useState(null); // { valid, invalid, dupes }
+  const [parseError, setParseError] = useState("");
+  const [progress,   setProgress]   = useState({ done:0, total:0 });
+  const [summary,    setSummary]    = useState(null);
+
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = parseImportCSV(String(reader.result));
+      if (result.error) { setParseError(result.error); setParsed(null); return; }
+      setParseError("");
+
+      const existing = new Set(watchlog.map(m=>`${(m.title||"").toLowerCase()}|${m.watch_date}`));
+      const dupes = [];
+      const fresh = result.valid.filter(r=>{
+        const key = `${r.title.toLowerCase()}|${r.watch_date}`;
+        if (existing.has(key)) { dupes.push(r); return false; }
+        return true;
+      });
+
+      setParsed({ valid:fresh, invalid:result.invalid, dupes });
+      setStep("preview");
+    };
+    reader.readAsText(file);
+  }
+
+  async function startImport() {
+    setStep("importing");
+    const rows = parsed.valid;
+    setProgress({ done:0, total:rows.length });
+    const built = [];
+    const BATCH = 8;
+    let matchedCount = 0;
+
+    for (let i=0; i<rows.length; i+=BATCH) {
+      const batch = rows.slice(i, i+BATCH);
+      const results = await Promise.all(batch.map(async r => {
+        let match = null;
+        try {
+          const params = { query:r.title, include_adult:false, language:"en-US", page:1 };
+          if (r.year) params.year = r.year;
+          const data = await tmdb("/search/movie", params);
+          match = data.results?.[0] || null;
+        } catch { /* leave unmatched, still import with CSV data */ }
+        if (match) matchedCount++;
+        return {
+          title:      match ? match.title : r.title,
+          year:       match ? (match.release_date||"").slice(0,4) : r.year,
+          genre:      match ? (GENRE_MAP[match.genre_ids?.[0]]||r.genre||"") : r.genre,
+          poster:     match && match.poster_path ? TMDB_IMG+match.poster_path : "",
+          tmdb_id:    match ? match.id : null,
+          notes:      r.notes,
+          watch_date: r.watch_date,
+          user_id:    userId
+        };
+      }));
+      built.push(...results);
+      setProgress({ done: Math.min(i+BATCH, rows.length), total: rows.length });
+    }
+
+    let inserted = [];
+    if (built.length>0) {
+      const { data, error } = await supabase.from("watchlog").insert(built).select();
+      if (!error) inserted = data||[];
+    }
+    onImported(inserted);
+    setSummary({
+      imported: inserted.length,
+      matched: matchedCount,
+      unmatched: built.length-matchedCount,
+      skippedInvalid: parsed.invalid.length,
+      skippedDupes: parsed.dupes.length
+    });
+    setStep("done");
+  }
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+      <div style={{ width:"100%", maxWidth:520, maxHeight:"85vh", overflowY:"auto", background:"#16161F", border:"1px solid #2A2A3A", borderRadius:16, padding:"1.5rem" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1rem" }}>
+          <h2 style={{ margin:0, color:"#F5E6C8", fontSize:20 }}>Import from CSV</h2>
+          {step!=="importing" && <button onClick={onClose} style={{ background:"none", border:"none", color:"#8888AA", fontSize:22, cursor:"pointer" }}>×</button>}
+        </div>
+
+        {step==="upload" && (
+          <>
+            <p style={{ color:"#8888AA", fontSize:14, lineHeight:1.6 }}>
+              Upload a CSV with columns <code>title</code> and <code>watch_date</code> (YYYY-MM-DD or MM/DD/YYYY) — <code>year</code>, <code>genre</code>, and <code>notes</code> are optional.
+              Each title gets matched against TMDB automatically for its poster, correct genre, and cast/crew data.
+            </p>
+            <input type="file" accept=".csv,text/csv" onChange={handleFile} style={{ color:"#F5E6C8", fontSize:13 }} />
+            {parseError && <p style={{ color:"#E05555", fontSize:13, marginTop:10 }}>{parseError}</p>}
+          </>
+        )}
+
+        {step==="preview" && parsed && (
+          <>
+            <p style={{ color:"#F5E6C8", fontSize:14 }}>
+              <strong>{fileName}</strong> — {parsed.valid.length} movie{parsed.valid.length===1?"":"s"} ready to import.
+            </p>
+            {parsed.dupes.length>0 && (
+              <p style={{ color:"#8888AA", fontSize:13 }}>{parsed.dupes.length} skipped — already in your journal (same title + date).</p>
+            )}
+            {parsed.invalid.length>0 && (
+              <div style={{ color:"#E05555", fontSize:13, marginBottom:10 }}>
+                {parsed.invalid.length} row{parsed.invalid.length===1?"":"s"} skipped:
+                <ul style={{ margin:"4px 0 0", paddingLeft:18 }}>
+                  {parsed.invalid.slice(0,5).map((x,i)=><li key={i}>Row {x.rowNum}: {x.reason}</li>)}
+                  {parsed.invalid.length>5 && <li>…and {parsed.invalid.length-5} more</li>}
+                </ul>
+              </div>
+            )}
+            <div style={{ maxHeight:220, overflowY:"auto", border:"1px solid #2A2A3A", borderRadius:8, padding:"8px 12px", marginBottom:12 }}>
+              {parsed.valid.slice(0,50).map((r,i)=>(
+                <div key={i} style={{ fontSize:13, color:"#AAAACC", padding:"3px 0", borderBottom: i<Math.min(parsed.valid.length,50)-1?"1px solid #222230":"none" }}>
+                  {r.title} {r.year && `(${r.year})`} — {r.watch_date}
+                </div>
+              ))}
+              {parsed.valid.length>50 && <div style={{ fontSize:12, color:"#555577", marginTop:6 }}>…and {parsed.valid.length-50} more</div>}
+            </div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={onClose} style={{ flex:1, padding:"10px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#8888AA", cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+              <button onClick={startImport} disabled={parsed.valid.length===0}
+                style={{ flex:2, padding:"10px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                Import {parsed.valid.length} Movie{parsed.valid.length===1?"":"s"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {step==="importing" && (
+          <div style={{ textAlign:"center", padding:"2rem 0" }}>
+            <p style={{ color:"#F5E6C8" }}>Matching against TMDB… {progress.done}/{progress.total}</p>
+            <div style={{ background:"#0D0D14", borderRadius:6, height:10, overflow:"hidden", margin:"10px auto", maxWidth:300 }}>
+              <div style={{ width:`${progress.total?(progress.done/progress.total)*100:0}%`, height:"100%", background:"#E8A838", transition:"width 0.2s" }} />
+            </div>
+            <p style={{ color:"#8888AA", fontSize:12 }}>Please keep this open until it finishes.</p>
+          </div>
+        )}
+
+        {step==="done" && summary && (
+          <div>
+            <p style={{ color:"#F5E6C8", fontSize:15 }}>
+              🎉 Imported <strong>{summary.imported}</strong> movie{summary.imported===1?"":"s"} — {summary.matched} matched to TMDB{summary.unmatched>0?`, ${summary.unmatched} added without a match`:""}.
+            </p>
+            {(summary.skippedDupes>0 || summary.skippedInvalid>0) && (
+              <p style={{ color:"#8888AA", fontSize:13 }}>
+                {summary.skippedDupes>0 && `${summary.skippedDupes} duplicate${summary.skippedDupes===1?"":"s"} skipped. `}
+                {summary.skippedInvalid>0 && `${summary.skippedInvalid} invalid row${summary.skippedInvalid===1?"":"s"} skipped.`}
+              </p>
+            )}
+            <button onClick={onClose} style={{ width:"100%", marginTop:12, padding:"10px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              Done
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Search Tab ───────────────────────────────────────────────────────────────
 function SearchTab({ onSelectMovie }) {
   const [query,        setQuery]        = useState("");
@@ -458,7 +701,7 @@ function JournalEntry({ m, onDelete, onEdit, onToggleGold }) {
   );
 }
 
-function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
+function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, loading }) {
   const [filter,     setFilter]     = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
   const [sort,       setSort]       = useState("recent");
@@ -540,6 +783,9 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, loading }) {
             <option value="recent">Most Recent</option>
             <option value="alpha">A–Z</option>
           </select>
+          <button onClick={onImportClick} style={{ padding:"7px 12px", background:"none", border:"1px solid #2A2A3A", borderRadius:8, color:"#8888AA", cursor:"pointer", fontFamily:"inherit", fontSize:13 }}>
+            ⬆ Import CSV
+          </button>
         </div>
       </div>
 
@@ -1168,6 +1414,7 @@ export default function App() {
   const [tab,        setTab]        = useState("journal");
   const [showLog,    setShowLog]    = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [logPrefill, setLogPrefill] = useState(null);
   const [loadingLog, setLoadingLog] = useState(false);
   const [authReady,  setAuthReady]  = useState(false);
@@ -1322,7 +1569,7 @@ export default function App() {
       </header>
 
       <main style={{ maxWidth:800, margin:"0 auto", padding:"2rem 24px" }}>
-        {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} loading={loadingLog} />}
+        {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} onImportClick={()=>setShowImport(true)} loading={loadingLog} />}
         {tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} />}
         {tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
         {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} onToggleGold={handleToggleGoldStar} />}
@@ -1334,6 +1581,15 @@ export default function App() {
           onSelectMovie={(prefill)=>{ setShowSearch(false); handleSelectMovie(prefill); }}
           onManual={()=>{ setShowSearch(false); setLogPrefill(null); setShowLog(true); }}
           onClose={()=>setShowSearch(false)}
+        />
+      )}
+
+      {showImport && (
+        <ImportCsvModal
+          watchlog={watchlog}
+          userId={user.id}
+          onImported={(rows)=>{ if (rows.length>0) setWatchlog(prev=>[...rows, ...prev]); }}
+          onClose={()=>setShowImport(false)}
         />
       )}
 
