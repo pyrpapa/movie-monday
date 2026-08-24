@@ -1101,6 +1101,7 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState("");
   const [reason,      setReason]      = useState("");
+  const [selected,    setSelected]    = useState(null);
 
   const journalWithTmdb = watchlog.filter(m=>m.tmdb_id).sort((a,b)=>a.title.localeCompare(b.title));
 
@@ -1123,13 +1124,20 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
     };
   }
 
+  async function selectMovie(movie) {
+    try {
+      const detail = await tmdb(`/movie/${movie.id}`, { language:"en-US" });
+      setSelected(detail);
+    } catch { setSelected(movie); }
+  }
+
   function switchMode(id) {
-    setMode(id); setError(""); setSuggestions([]); setReason("");
+    setMode(id); setError(""); setSuggestions([]); setReason(""); setSelected(null);
   }
 
   async function findByCriteria() {
     if (!genreId && !personQuery.trim() && !decade) { setError("Pick a genre, decade, or enter a name."); return; }
-    setLoading(true); setError(""); setSuggestions([]); setReason("");
+    setLoading(true); setError(""); setSuggestions([]); setReason(""); setSelected(null);
     try {
       const params = { sort_by:"popularity.desc", "vote_count.gte":100, language:"en-US", page:1 };
       let personName = "";
@@ -1156,7 +1164,7 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
 
   async function findSimilar() {
     if (!journalId) { setError("Pick a movie from your journal."); return; }
-    setLoading(true); setError(""); setSuggestions([]); setReason("");
+    setLoading(true); setError(""); setSuggestions([]); setReason(""); setSelected(null);
     const source = watchlog.find(m=>String(m.tmdb_id)===String(journalId));
     try {
       let data = await tmdb(`/movie/${journalId}/recommendations`, { language:"en-US", page:1 });
@@ -1243,12 +1251,37 @@ function SuggestionsTab({ watchlog, onSelectMovie }) {
         <p style={{ color:"#8888AA", fontSize:14 }}>No matches — try different criteria.</p>
       )}
 
+      {selected && (
+        <div style={{ background:"#16161F", border:"1px solid #E8A838", borderRadius:12, padding:"1.25rem", marginBottom:"1.5rem", display:"flex", gap:16 }}>
+          <Poster src={selected.poster_path?TMDB_IMG+selected.poster_path:""} title={selected.title} width={90} height={135} />
+          <div style={{ flex:1 }}>
+            <h3 style={{ margin:"0 0 4px", color:"#F5E6C8" }}>
+              {selected.title}
+              <span style={{ color:"#8888AA", fontWeight:400, fontSize:15 }}> ({(selected.release_date||"").slice(0,4)})</span>
+            </h3>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:8 }}>
+              {(selected.genres||[]).map(g=>(
+                <span key={g.id} style={{ fontSize:11, padding:"2px 8px", borderRadius:20, border:"1px solid #8888AA", color:"#8888AA" }}>{g.name}</span>
+              ))}
+              {selected.vote_average>0 && (
+                <span style={{ fontSize:11, padding:"2px 8px", borderRadius:20, border:"1px solid #E8A838", color:"#E8A838" }}>★ {selected.vote_average.toFixed(1)}</span>
+              )}
+            </div>
+            <p style={{ margin:"0 0 12px", color:"#AAAACC", fontSize:14, lineHeight:1.6 }}>{selected.overview}</p>
+            <button onClick={()=>onSelectMovie(buildPrefill(selected))}
+              style={{ padding:"8px 18px", background:"#E8A838", border:"none", borderRadius:8, color:"#0D0D14", fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              + Log this movie
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px,1fr))", gap:12 }}>
         {sortedSuggestions.map(m=>(
-          <div key={m.id} onClick={()=>onSelectMovie(buildPrefill(m))}
-            style={{ background:"#16161F", border:"1px solid #2A2A3A", borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
+          <div key={m.id} onClick={()=>selectMovie(m)}
+            style={{ background:"#16161F", border:`1px solid ${selected?.id===m.id?"#E8A838":"#2A2A3A"}`, borderRadius:10, overflow:"hidden", cursor:"pointer", transition:"border-color 0.15s" }}
             onMouseEnter={e=>e.currentTarget.style.borderColor="#E8A838"}
-            onMouseLeave={e=>e.currentTarget.style.borderColor="#2A2A3A"}>
+            onMouseLeave={e=>e.currentTarget.style.borderColor=selected?.id===m.id?"#E8A838":"#2A2A3A"}>
             {m.poster_path
               ? <img src={TMDB_IMG+m.poster_path} alt="" style={{ width:"100%", aspectRatio:"2/3", objectFit:"cover", display:"block" }} />
               : <div style={{ aspectRatio:"2/3", background:"#0D0D14", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>🎬</div>}
