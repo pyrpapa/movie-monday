@@ -944,29 +944,29 @@ function JournalTab({ watchlog, onDelete, onEdit, onToggleGold, onImportClick, l
 // ─── Hall of Fame Tab ────────────────────────────────────────────────────────
 const HOF_TOP_N = 25;
 
-function HofRow({ m, rank, dragId, overId, overPosition, readOnly, onToggleGold, onRowDragStart, onRowDragOver, onRowDragEnd, onRowDrop }) {
-  const showLine = !readOnly && dragId!=null && dragId!==m.id && overId===m.id;
+function HofRow({ m, rank, zone, staged, dragId, overId, overPosition, readOnly, onToggleGold, onToggleStage, onRemoveFromTop25, onRowDragStart, onRowDragOver, onRowDragEnd, onRowDrop }) {
+  const draggable = !readOnly && zone==="top";
+  const showLine = draggable && dragId!=null && dragId!==m.id && overId===m.id;
   return (
     <div style={{ position:"relative" }}>
       {showLine && overPosition==="above" && (
         <div style={{ position:"absolute", top:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
       )}
       <div
-        draggable={!readOnly}
-        onDragStart={()=>onRowDragStart(m.id)}
-        onDragOver={e=>{
-          if (readOnly) return;
+        draggable={draggable}
+        onDragStart={draggable ? ()=>onRowDragStart(m.id) : undefined}
+        onDragOver={!draggable ? undefined : e=>{
           e.preventDefault();
           e.stopPropagation();
           const rect = e.currentTarget.getBoundingClientRect();
           onRowDragOver(m.id, e.clientY < rect.top+rect.height/2 ? "above" : "below");
         }}
-        onDragEnd={onRowDragEnd}
-        onDrop={readOnly ? undefined : e=>{ e.stopPropagation(); onRowDrop(m.id); }}
+        onDragEnd={draggable ? onRowDragEnd : undefined}
+        onDrop={!draggable ? undefined : e=>{ e.stopPropagation(); onRowDrop(m.id); }}
         style={{
           display:"flex", alignItems:"center", gap:12, background:"#16161F",
-          border:"1px solid #2A2A3A", borderRadius:10,
-          padding:"10px 14px", cursor: readOnly ? "default" : "grab", opacity: dragId===m.id?0.4:1
+          border:`1px solid ${staged?"#A78BFA":"#2A2A3A"}`, borderRadius:10,
+          padding:"10px 14px", cursor: draggable ? "grab" : "default", opacity: dragId===m.id?0.4:1
         }}>
         {rank!=null && <span style={{ color:"#E8A838", fontWeight:700, width:22, textAlign:"center", fontSize:15, fontFamily:"'Georgia',serif" }}>{rank}</span>}
         <Poster src={m.poster} title={m.title} width={40} height={58} />
@@ -974,15 +974,28 @@ function HofRow({ m, rank, dragId, overId, overPosition, readOnly, onToggleGold,
           <p style={{ margin:0, color:"#F5E6C8", fontSize:15, fontFamily:"'Georgia',serif", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.title}</p>
           {m.year && <p style={{ margin:0, color:"#8888AA", fontSize:12 }}>{m.year}</p>}
         </div>
-        {!readOnly && (
-          <>
-            <button onClick={()=>onToggleGold(m)} title="Remove from Hall of Fame"
-              style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, padding:0, lineHeight:1, color:"#E8A838", flexShrink:0 }}>
-              ⭐
-            </button>
-            <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>
-          </>
+        {!readOnly && zone==="top" && (
+          <button onClick={()=>onRemoveFromTop25(m)} title={`Remove from Top ${HOF_TOP_N}`}
+            style={{ background:"none", border:"1px solid #2A2A3A", borderRadius:8, cursor:"pointer", fontSize:12, padding:"5px 10px", color:"#8888AA", flexShrink:0, fontFamily:"inherit", whiteSpace:"nowrap" }}>
+            Remove from Top {HOF_TOP_N}
+          </button>
         )}
+        {!readOnly && zone==="rest" && (
+          <button onClick={()=>onToggleStage(m)} title={staged?"Cancel staging":`Stage to fill the next open Top ${HOF_TOP_N} spot`}
+            style={{
+              background: staged?"#A78BFA":"none", border:"1px solid #A78BFA", borderRadius:8, cursor:"pointer",
+              fontSize:12, padding:"5px 10px", color: staged?"#0D0D14":"#A78BFA", fontWeight:600, flexShrink:0, fontFamily:"inherit", whiteSpace:"nowrap"
+            }}>
+            {staged ? "★ Staged" : `Stage for Top ${HOF_TOP_N}`}
+          </button>
+        )}
+        {!readOnly && (
+          <button onClick={()=>onToggleGold(m)} title="Remove from Hall of Fame"
+            style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, padding:0, lineHeight:1, color:"#E8A838", flexShrink:0 }}>
+            ⭐
+          </button>
+        )}
+        {draggable && <span style={{ color:"#555577", fontSize:16, flexShrink:0 }}>⠿</span>}
       </div>
       {showLine && overPosition==="below" && (
         <div style={{ position:"absolute", bottom:-5, left:0, right:0, height:3, background:"#E8A838", borderRadius:2 }} />
@@ -991,51 +1004,37 @@ function HofRow({ m, rank, dragId, overId, overPosition, readOnly, onToggleGold,
   );
 }
 
-function GoldStarTab({ watchlog, onReorder, onToggleGold, readOnly }) {
+function GoldStarTab({ watchlog, onReorder, onToggleGold, onToggleStage, onRemoveFromTop25, readOnly }) {
   const goldMovies  = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank);
   const topMovies   = goldMovies.slice(0, HOF_TOP_N);
   const restMovies  = [...goldMovies.slice(HOF_TOP_N)].sort((a,b)=>a.title.localeCompare(b.title));
+  const stagedMovie = goldMovies.find(m=>m.hof_staged);
 
   const [dragId,       setDragId]       = useState(null);
   const [overId,       setOverId]       = useState(null);
   const [overPosition, setOverPosition] = useState(null); // "above" | "below"
-  const [overRestZone, setOverRestZone] = useState(false); // hovering empty space in the "rest" list
 
-  function reset() { setDragId(null); setOverId(null); setOverPosition(null); setOverRestZone(false); }
+  function reset() { setDragId(null); setOverId(null); setOverPosition(null); }
 
-  function dropRelativeTo(targetId, position) {
+  // Reordering only applies within the Top N — moving between zones is button-driven now.
+  function reorderWithinTop(targetId, position) {
     if (dragId==null || dragId===targetId) { reset(); return; }
+    if (!topMovies.some(m=>m.id===dragId) || !topMovies.some(m=>m.id===targetId)) { reset(); return; }
     const order = goldMovies.filter(m=>m.id!==dragId);
     const draggedMovie = goldMovies.find(m=>m.id===dragId);
     const targetIdx = order.findIndex(m=>m.id===targetId);
     if (targetIdx===-1) { reset(); return; }
-    let insertAt = position==="below" ? targetIdx+1 : targetIdx;
-    // Dropping right at the top/rest boundary is ambiguous by raw index alone (removing the
-    // dragged item shifts everything after it), so pin the result to the zone the target row
-    // is actually in — landing on a "rest" row always ends up in rest, landing on a "top" row
-    // always ends up in top, regardless of which side of the boundary the raw index landed on.
-    if (restMovies.some(m=>m.id===targetId)) insertAt = Math.max(insertAt, HOF_TOP_N);
-    if (topMovies.some(m=>m.id===targetId))  insertAt = Math.min(insertAt, HOF_TOP_N-1);
-    order.splice(insertAt, 0, draggedMovie);
-    onReorder(order.map(m=>m.id));
-    reset();
-  }
-
-  function dropIntoRestZone() {
-    if (dragId==null) { reset(); return; }
-    const order = goldMovies.filter(m=>m.id!==dragId);
-    const draggedMovie = goldMovies.find(m=>m.id===dragId);
-    order.splice(Math.min(HOF_TOP_N, order.length), 0, draggedMovie);
+    order.splice(position==="below" ? targetIdx+1 : targetIdx, 0, draggedMovie);
     onReorder(order.map(m=>m.id));
     reset();
   }
 
   const rowProps = {
-    dragId, overId, overPosition, readOnly, onToggleGold,
+    dragId, overId, overPosition, readOnly, onToggleGold, onToggleStage, onRemoveFromTop25,
     onRowDragStart: setDragId,
     onRowDragOver: (id, pos) => { setOverId(id); setOverPosition(pos); },
     onRowDragEnd: reset,
-    onRowDrop: (id) => dropRelativeTo(id, overPosition),
+    onRowDrop: (id) => reorderWithinTop(id, overPosition),
   };
 
   if (goldMovies.length===0) return (
@@ -1053,25 +1052,21 @@ function GoldStarTab({ watchlog, onReorder, onToggleGold, readOnly }) {
       </p>
 
       <h3 style={{ color:"#F5E6C8", fontSize:14, fontFamily:"'Georgia',serif", margin:"0 0 10px" }}>Top {HOF_TOP_N}</h3>
+      {stagedMovie && !readOnly && (
+        <p style={{ color:"#A78BFA", fontSize:12, margin:"0 0 10px" }}>★ "{stagedMovie.title}" is staged — it'll take the spot of whichever pick you remove next.</p>
+      )}
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-        {topMovies.map((m,i)=><HofRow key={m.id} m={m} rank={i+1} {...rowProps} />)}
+        {topMovies.map((m,i)=><HofRow key={m.id} m={m} rank={i+1} zone="top" staged={false} {...rowProps} />)}
       </div>
 
       {goldMovies.length>HOF_TOP_N && (
         <>
           <h3 style={{ color:"#F5E6C8", fontSize:14, fontFamily:"'Georgia',serif", margin:"1.75rem 0 4px" }}>Also in Hall of Fame</h3>
           <p style={{ color:"#555577", fontSize:12, margin:"0 0 10px" }}>
-            {readOnly ? "Not in the ranked top." : `Drag one up into Top ${HOF_TOP_N} to rank it, or drag a top ${HOF_TOP_N} pick down here.`}
+            {readOnly ? "Not in the ranked top." : `Stage one to queue it for the next open Top ${HOF_TOP_N} spot.`}
           </p>
-          <div
-            onDragOver={e=>{ if (readOnly) return; e.preventDefault(); setOverRestZone(true); }}
-            onDragLeave={()=>setOverRestZone(false)}
-            onDrop={readOnly ? undefined : dropIntoRestZone}
-            style={{
-              display:"flex", flexDirection:"column", gap:8,
-              outline: overRestZone ? "2px dashed #E8A838" : "none", outlineOffset:4, borderRadius:10
-            }}>
-            {restMovies.map(m=><HofRow key={m.id} m={m} rank={null} {...rowProps} />)}
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {restMovies.map(m=><HofRow key={m.id} m={m} rank={null} zone="rest" staged={m.hof_staged===true} {...rowProps} />)}
           </div>
         </>
       )}
@@ -1684,6 +1679,39 @@ export default function App() {
     await Promise.all(updates.map(u=>supabase.from("watchlog").update({ gold_rank:u.gold_rank }).eq("id", u.id)));
   }
 
+  async function handleToggleStage(movie) {
+    const wasStaged = movie.hof_staged === true;
+    const otherStaged = watchlog.find(m=>m.hof_staged && m.id!==movie.id);
+    setWatchlog(prev=>prev.map(m=>{
+      if (m.id===movie.id) return { ...m, hof_staged: !wasStaged };
+      if (otherStaged && m.id===otherStaged.id) return { ...m, hof_staged:false };
+      return m;
+    }));
+    const jobs = [supabase.from("watchlog").update({ hof_staged: !wasStaged }).eq("id", movie.id)];
+    if (!wasStaged && otherStaged) jobs.push(supabase.from("watchlog").update({ hof_staged:false }).eq("id", otherStaged.id));
+    await Promise.all(jobs);
+  }
+
+  // Demotes a Top 25 pick. If something is staged, it swaps ranks with the
+  // demoted pick (landing in its exact vacated slot) and is un-staged; if
+  // nothing is staged, the next-best-ranked pick fills the vacancy as usual.
+  async function handleRemoveFromTop25(movie) {
+    const goldMovies = [...watchlog].filter(m=>m.gold_rank!=null).sort((a,b)=>a.gold_rank-b.gold_rank);
+    const staged = watchlog.find(m=>m.hof_staged && m.id!==movie.id);
+    let order;
+    if (staged) {
+      order = [...goldMovies];
+      const posMovie  = order.findIndex(m=>m.id===movie.id);
+      const posStaged = order.findIndex(m=>m.id===staged.id);
+      [order[posMovie], order[posStaged]] = [order[posStaged], order[posMovie]];
+    } else {
+      order = goldMovies.filter(m=>m.id!==movie.id);
+      order.push(movie);
+    }
+    await handleReorderGoldStars(order.map(m=>m.id));
+    if (staged) await handleToggleStage(staged);
+  }
+
   function handleSelectMovie(prefill) {
     setLogPrefill(prefill);
     setShowLog(true);
@@ -1775,7 +1803,7 @@ export default function App() {
         {tab==="journal"     && <JournalTab     watchlog={watchlog} onDelete={handleDelete} onEdit={handleEditMovie} onToggleGold={handleToggleGoldStar} onImportClick={()=>setShowImport(true)} loading={loadingLog} readOnly={demoMode} />}
         {!demoMode && tab==="search"      && <SearchTab      onSelectMovie={handleSelectMovie} watchlog={watchlog} />}
         {!demoMode && tab==="suggestions" && <SuggestionsTab watchlog={watchlog} onSelectMovie={handleSelectMovie} />}
-        {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} onToggleGold={handleToggleGoldStar} readOnly={demoMode} />}
+        {tab==="goldstar"    && <GoldStarTab    watchlog={watchlog} onReorder={handleReorderGoldStars} onToggleGold={handleToggleGoldStar} onToggleStage={handleToggleStage} onRemoveFromTop25={handleRemoveFromTop25} readOnly={demoMode} />}
         {tab==="report"      && <ReportTab      watchlog={watchlog} userEmail={demoMode ? "" : user.email} />}
       </main>
 
