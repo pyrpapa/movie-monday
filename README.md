@@ -3,7 +3,9 @@
 Watch movie with loved one every monday and alternate who chooses!
 A personal movie journal web app to track every film you watch.
 
-**Live app:** https://pyrpapa.github.io/movie-monday/
+**Live app:** https://movie-monday-roan.vercel.app/ (also on [GitHub Pages](https://pyrpapa.github.io/movie-monday/))
+
+**[Live demo](https://movie-monday-roan.vercel.app/?demo=1)**: browse a real journal, read-only, no sign-in needed.
 
 ## What it does
 - Search for movies by title, actor, or director
@@ -44,6 +46,16 @@ VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 - Supabase — free at [supabase.com](https://supabase.com)
 
 ## Deployment
+
+### Vercel
+
+The Vercel project is linked to this repo and redeploys on every push to `main`.
+`vite.config.js` uses base `/` when building on Vercel (Vercel sets `VERCEL=1`) and `/movie-monday/` everywhere else.
+Set `VITE_TMDB_TOKEN`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_DEMO_ENABLED` in
+Vercel → Project → Settings → Environment Variables, and add `https://movie-monday-roan.vercel.app` as a
+Supabase Redirect URL (leave the Site URL alone; the Supabase project is shared).
+
+### GitHub Pages
 
 Pushing to `main` automatically builds and deploys to GitHub Pages via [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 
